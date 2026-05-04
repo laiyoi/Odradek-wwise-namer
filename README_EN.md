@@ -99,12 +99,36 @@ OUTPUT_DIR = Path(r"G:\ds2 unpack\wems\Exported_Audio")  # Export directory
 VGMSTREAM_CLI = Path(r"E:\下载\odradek\vgmstream-r2083\vgmstream-cli.exe")  # vgmstream path
 ```
 
+#### Command Line Arguments
+
+The script supports command line arguments to control processing mode:
+
+```bash
+# Phase 1: Build mapping only
+python export_sounds.py 1
+
+# Phase 2: Export audio based on existing mapping
+python export_sounds.py 2
+
+# Build mapping then export audio (one-click complete)
+python export_sounds.py 12
+```
+
+When run without arguments, the script enters **interactive mode** and prompts you to select an operation.
+
 #### Two-Phase Processing
 
-The script supports two-phase processing, controlled by the `BUILD_MAPPING_ONLY` switch:
+The script uses a two-phase processing architecture for better efficiency:
 
-- `BUILD_MAPPING_ONLY = True`: Build mapping table only, do not export audio
-- `BUILD_MAPPING_ONLY = False`: Export audio based on existing mapping (will auto-build if mapping doesn't exist)
+- **Phase 1 (Build Mapping)**: Parse all JSON and TXTP files, generate `sound_wem_mapping_export.json`
+  - Read-only, very fast
+  - Generate detailed mapping table with all audio source information
+  - Record missing WEM files to `missing_wem_files.csv`
+
+- **Phase 2 (Export)**: Export audio directly based on the mapping table
+  - Skip repetitive JSON parsing
+  - Focus on audio export with resume support
+  - Automatically record export progress to `export_progress.json`
 
 ## Project Structure
 
@@ -124,8 +148,23 @@ Odradek-wwise-namer/
 ├── WwiseID/              # WwiseID JSON files
 ├── extract_bnk_from_json.py  # BNK extraction script
 ├── export_sounds.py      # Main audio export script
+├── export_by_id.py       # Export specific audio by ID
+├── build_audio_manifest.py   # Build audio resource manifest
+├── fix_negative_ids.py   # Fix negative IDs in JSON
 └── README_EN.md          # This file
 ```
+
+## Output Files
+
+After running the script, the following files will be generated:
+
+| File | Description |
+|------|-------------|
+| `sound_wem_mapping_export.json` | Audio mapping table with all resource and audio source associations |
+| `export_progress.json` | Export progress for resume support |
+| `streaming_wem_map.csv` | Missing Streaming WEM files record |
+| `missing_wem_files.csv` | Detailed record of WEM files not found |
+| `mapping_build.log` | Detailed log of mapping build process |
 
 ## Notes
 
@@ -133,6 +172,7 @@ Odradek-wwise-namer/
 - vgmstream path needs to be modified according to your actual setup
 - Export process may take a long time, script supports resuming from interruption (via `export_progress.json`)
 - Streaming type WEM files need to exist in `WemNamer\RENAMED` to be correctly exported
+- If some WEM files are missing, check `missing_wem_files.csv` for details
 
 ## Credits
 

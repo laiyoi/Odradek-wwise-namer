@@ -102,12 +102,36 @@ OUTPUT_DIR = Path(r"G:\ds2 unpack\wems\Exported_Audio")  # 导出目录
 VGMSTREAM_CLI = Path(r"E:\下载\odradek\vgmstream-r2083\vgmstream-cli.exe")  # vgmstream 路径
 ```
 
-#### 两阶段处理
+#### 命令行参数
 
-脚本支持两阶段处理，通过 `BUILD_MAPPING_ONLY` 开关控制：
+脚本支持命令行参数控制处理模式：
 
-- `BUILD_MAPPING_ONLY = True`：仅构建映射表，不导出音频
-- `BUILD_MAPPING_ONLY = False`：基于已有映射表导出音频（如果映射表不存在会自动先构建）
+```bash
+# 阶段一：仅构建映射表
+python export_sounds.py 1
+
+# 阶段二：基于已有映射表导出音频
+python export_sounds.py 2
+
+# 先构建映射表，再导出音频（一键完成）
+python export_sounds.py 12
+```
+
+不带参数运行时，脚本会进入**交互式模式**，提示你选择操作。
+
+#### 两阶段处理说明
+
+脚本采用两阶段处理架构，提高效率：
+
+- **阶段一（Build Mapping）**：解析所有 JSON 和 TXTP 文件，生成 `sound_wem_mapping_export.json`
+  - 只读不写，速度极快
+  - 生成详细的映射表，包含所有音频源信息
+  - 记录缺失的 WEM 文件到 `missing_wem_files.csv`
+
+- **阶段二（Export）**：基于映射表直接导出音频
+  - 跳过重复的 JSON 解析
+  - 专注音频导出，支持断点续传
+  - 自动记录导出进度到 `export_progress.json`
 
 ## 项目结构
 
@@ -127,8 +151,23 @@ Odradek-wwise-namer/
 ├── WwiseID/              # WwiseID JSON 文件
 ├── extract_bnk_from_json.py  # BNK 提取脚本
 ├── export_sounds.py      # 音频导出主脚本
+├── export_by_id.py       # 按 ID 导出指定音频
+├── build_audio_manifest.py   # 构建音频资源清单
+├── fix_negative_ids.py   # 修复 JSON 中的负数 ID
 └── README.md             # 本文件
 ```
+
+## 输出文件说明
+
+脚本运行后会生成以下文件：
+
+| 文件 | 说明 |
+|------|------|
+| `sound_wem_mapping_export.json` | 音频映射表，包含所有资源和音频源的关联信息 |
+| `export_progress.json` | 导出进度，支持断点续传 |
+| `streaming_wem_map.csv` | 缺失的 Streaming WEM 文件记录 |
+| `missing_wem_files.csv` | 未找到的 WEM 文件详细记录 |
+| `mapping_build.log` | Mapping 构建过程的详细日志 |
 
 ## 注意事项
 
@@ -136,10 +175,10 @@ Odradek-wwise-namer/
 - vgmstream 路径需要根据实际情况修改
 - 导出过程可能需要较长时间，脚本支持断点续传（通过 `export_progress.json`）
 - Streaming 类型的 WEM 文件需要在 `WemNamer\RENAMED` 中存在才能正确导出
+- 如果某些 WEM 文件缺失，可以查看 `missing_wem_files.csv` 了解详情
 
 ## 致谢
 
 - [ShadelessFox](https://github.com/ShadelessFox) - 创建 Odradek 和 Decima Workshop
 - [bnnm](https://github.com/bnnm) - 创建 wwiser 工具
 - [vgmstream 团队](https://github.com/vgmstream/vgmstream) - 提供游戏音频转换工具
-

@@ -1,8 +1,6 @@
-Extracted_Banks/
-GraphPgmRes/
-WwiseID/
-BankRes/
-GraphSoundRes
-NodeConstRes
 WemRes
 WemNamer/RENAMED/
+ww*
+*json
+*txtp
+*csv
