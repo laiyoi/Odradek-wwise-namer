@@ -91,6 +91,37 @@ python export_sounds.py
 - 根据 TXTP 文件解析音频源（Embedded 或 Streaming）
 - 使用 vgmstream 将音频导出为 WAV 格式
 - 生成 `streaming_wem_map.csv` 记录缺失的 Streaming WEM 文件
+- 生成 `missing_wem_files.csv` 记录未被使用的 WEM 文件（补集）
+
+### 步骤 5：分析未使用的 WEM 文件（可选）
+
+运行 `link_unused_wem.py` 脚本，分析未被使用的 WEM 文件的来源：
+
+```bash
+cd d:\Odradek-wwise-namer
+python link_unused_wem.py
+```
+
+此脚本会：
+
+- 读取 `missing_wem_files.csv`（未被使用的 WEM 文件列表）
+- 解析 `banks.xml`，查找这些 WEM 在哪些 bank 中
+- 解析 `WwiseID` 目录，查找对应的 WwiseID
+- 解析 `WemRes` 目录，查找原始的 WwiseWemResource 文件
+- 生成 `unused_wem_with_banks.csv`，包含完整的关联信息
+
+**输出格式**：
+
+| 字段 | 说明 |
+|------|------|
+| WemID | WEM 文件的 ID |
+| FoundInWemRes | 是否在 WemRes 中找到 |
+| WemResCoord | WemRes 的坐标（如 `2:878`） |
+| FoundInBanks | 是否在 banks.xml 中找到 |
+| Banks | 所在的 bank 文件列表 |
+| BankIDs | bank 的 dwSoundBankID |
+| FoundInWwiseID | 是否在 WwiseID 中找到 |
+| WwiseIDCoord | WwiseID 的坐标 |
 
 #### 脚本配置说明
 
@@ -161,13 +192,19 @@ Odradek-wwise-namer/
 
 脚本运行后会生成以下文件：
 
+### 来自 `export_sounds.py`
 | 文件 | 说明 |
 |------|------|
 | `sound_wem_mapping_export.json` | 音频映射表，包含所有资源和音频源的关联信息 |
 | `export_progress.json` | 导出进度，支持断点续传 |
 | `streaming_wem_map.csv` | 缺失的 Streaming WEM 文件记录 |
-| `missing_wem_files.csv` | 未找到的 WEM 文件详细记录 |
+| `missing_wem_files.csv` | **未被使用的 WEM 文件列表**（补集） |
 | `mapping_build.log` | Mapping 构建过程的详细日志 |
+
+### 来自 `link_unused_wem.py`
+| 文件 | 说明 |
+|------|------|
+| `unused_wem_with_banks.csv` | 未被使用的 WEM 文件的完整来源信息，包含 WemRes 坐标、bank 信息和 WwiseID 关联 |
 
 ## 注意事项
 

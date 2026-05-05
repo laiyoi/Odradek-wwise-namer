@@ -3,6 +3,7 @@ import re
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 # --- 配置区 ---
@@ -12,8 +13,9 @@ GRAPH_PGM_RES_DIR = BASE_DIR / "GraphPgmRes"
 NODE_CONST_RES_DIR = BASE_DIR / "NodeConstRes"
 WWISE_ID_DIR = BASE_DIR / "WwiseID"
 TXTP_DIR = BASE_DIR / "Extracted_Banks" / "txtp"
+BANKS_XML = BASE_DIR / "Extracted_Banks" / "banks.xml"
 # 从指定路径读取已重命名的wem文件（文件名为wemid，可能有负数需要转换）
-RENAMED_WEM_DIR = BASE_DIR / "WemNamer" / "RENAMED"
+RENAMED_WEM_DIR = Path(r"G:\ds2 unpack\wems\RENAMED")
 OUTPUT_DIR = Path(r"G:\ds2 unpack\wems\Exported_Audio")
 VGMSTREAM_CLI = Path(r"E:\下载\odradek\vgmstream-r2083\vgmstream-cli.exe")
 PROGRESS_FILE = BASE_DIR / "export_progress.json"
@@ -101,6 +103,49 @@ def build_renamed_wem_index():
     return wem_index
 
 
+def build_bank_media_index():
+    """从banks.xml构建media索引，记录每个media在哪个bank中"""
+    media_index = {}
+    if not BANKS_XML.exists():
+        return media_index
+    
+    try:
+        tree = ET.parse(BANKS_XML)
+        root = tree.getroot()
+        
+        # 遍历所有bank
+        for bank in root.findall(".//root"):
+            bank_filename = bank.get("filename")
+            if not bank_filename:
+                continue
+            
+            # 遍历所有MediaHeader
+            for media_header in bank.findall(".//obj[@na='MediaHeader']"):
+                # 找sid字段
+                sid_field = media_header.find(".//fld[@na='id']")
+                if sid_field is None:
+                    continue
+                
+                sid_value = sid_field.get("value") or sid_field.get("va")
+                if sid_value is None:
+                    continue
+                
+                try:
+                    media_id = int(sid_value)
+                    # 转换为u32
+                    media_id_u32 = media_id & 0xFFFFFFFF
+                    # 记录在media_index中
+                    if media_id_u32 not in media_index:
+                        media_index[media_id_u32] = []
+                    media_index[media_id_u32].append(bank_filename)
+                except ValueError:
+                    continue
+    except Exception as e:
+        print(f"加载banks.xml失败: {e}")
+    
+    return media_index
+
+
 def sanitize_filename(name):
     return re.sub(r'[\\/*?:"<>|]', '_', name)
 
@@ -156,7 +201,7 @@ def log_to_file(message):
 
 
 def append_to_missing_wem_csv(csv_lines):
-    """动态追加缺失WEM记录到CSV文件"""
+    """动态追加缺失WEM记录到CSV文件（被引用但找不到的WEM）"""
     global csv_lock
     if not csv_lines:
         return
@@ -189,6 +234,33 @@ def clear_missing_wem_csv():
             print(f"清理缺失WEM CSV失败: {e}")
 
 
+def write_unused_wem_csv(used_wem_ids):
+    """写入未被使用的WEM文件列表（补集）"""
+    renamed_wem_index = build_renamed_wem_index()
+    unused_wems = []
+    
+    for wem_id in renamed_wem_index:
+        if wem_id not in used_wem_ids:
+            wem_path = Path(renamed_wem_index[wem_id])
+            unused_wems.append({
+                "WemID": wem_id,
+                "Filename": wem_path.name,
+                "Path": str(wem_path)
+            })
+    
+    if unused_wems:
+        try:
+            with open(MISSING_WEM_CSV, 'w', encoding='utf-8') as f:
+                f.write("WemID,Filename,Path\n")
+                for wem in unused_wems:
+                    f.write(f"{wem['WemID']},{wem['Filename']},{wem['Path']}\n")
+            print(f"[*] 未使用的WEM记录: {MISSING_WEM_CSV} ({len(unused_wems)}个)")
+        except Exception as e:
+            print(f"写入未使用WEM CSV失败: {e}")
+    else:
+        print(f"[*] 所有WEM文件都被使用了")
+
+
 def build_mapping():
     """阶段一：构建完整的mapping数据，不导出音频"""
     print("="*60)
@@ -203,12 +275,16 @@ def build_mapping():
     start_time = time.time()
     txtp_index = build_txtp_index()
     renamed_wem_index = build_renamed_wem_index()
+    bank_media_index = build_bank_media_index()
 
     mapping_data = []
     skipped_count = 0
     error_count = 0
     missing_wem_buffer = []
     MISSING_WEM_BUFFER_SIZE = 10
+    
+    # 收集所有被使用的WEM ID（用于计算补集）
+    used_wem_ids = set()
 
     base_dir_abs = TXTP_DIR.resolve()
     abs_base = base_dir_abs.parent.resolve()
@@ -219,7 +295,7 @@ def build_mapping():
     total_files = len(all_files)
 
     print(f"[*] 扫描到 {total_files} 个 GraphSoundResource 文件")
-    print(f"[*] TXTP索引: {len(txtp_index)} 个 | WEM索引: {len(renamed_wem_index)} 个")
+    print(f"[*] TXTP索引: {len(txtp_index)} 个 | WEM索引: {len(renamed_wem_index)} 个 | Bank索引: {len(bank_media_index)} 个")
     print("-"*60)
 
     for i, filepath in enumerate(all_files, 1):
@@ -302,16 +378,37 @@ def build_mapping():
             if wwise_id not in txtp_index:
                 skipped_count += 1
                 current_mapping["TXTP_Filename"] = "NOT_FOUND"
-                current_mapping["AudioSources"].append({
-                    "WemID": None,
-                    "SourceType": "TXTP_NotFound",
-                    "BankFile": None,
-                    "WemRes_Coord": None,
-                    "RawLine": None
-                })
+                
+                # 尝试在banks.xml中查找
+                bank_info = ""
+                if wwise_id in bank_media_index:
+                    banks = bank_media_index[wwise_id]
+                    bank_info = f" (Banks: {', '.join(banks)})"
+                    # 为每个bank添加一个AudioSource
+                    for bank_filename in banks:
+                        current_mapping["AudioSources"].append({
+                            "WemID": wwise_id,
+                            "SourceType": "TXTP_NotFound_BankKnown",
+                            "BankFile": bank_filename,
+                            "WemRes_Coord": None,
+                            "RawLine": None
+                        })
+                    # 添加到file_results
+                    bank_names = [Path(bank).name for bank in banks]
+                    file_results.append(f"无TXTP[{', '.join(bank_names)}]")
+                else:
+                    current_mapping["AudioSources"].append({
+                        "WemID": wwise_id,
+                        "SourceType": "TXTP_NotFound_BankUnknown",
+                        "BankFile": None,
+                        "WemRes_Coord": None,
+                        "RawLine": None
+                    })
+                    file_results.append("无TXTP")
+                    
                 mapping_data.append(current_mapping)
                 # 记录到日志文件，不在控制台显示
-                log_entries.append(f"TXTP未找到: {resource_name} (WwiseID: {wwise_id})")
+                log_entries.append(f"TXTP未找到: {resource_name} (WwiseID: {wwise_id}){bank_info}")
                 continue
 
             txtp_path = txtp_index[wwise_id]
@@ -372,11 +469,16 @@ def build_mapping():
                     source_info["SourceType"] = "Embedded"
                     source_info["BankFile"] = Path(raw_path).name
                     layer_results.append(f"E{idx}")
+                    # 记录被使用的WEM ID
+                    if u32_id:
+                        used_wem_ids.add(u32_id)
                 elif clean_line.startswith("wem/"):
                     if u32_id and u32_id in renamed_wem_index:
                         source_info["SourceType"] = "Streaming"
                         source_info["WemRes_Coord"] = f"WemID:{u32_id}"
                         layer_results.append(f"S{idx}")
+                        # 记录被使用的WEM ID
+                        used_wem_ids.add(u32_id)
                     else:
                         source_info["SourceType"] = "Streaming_NotFound"
                         source_info["WemRes_Coord"] = f"WemID:{u32_id}"
@@ -395,6 +497,8 @@ def build_mapping():
                     has_error = True
                     layer_results.append(f"L{idx}(未知)")
                     log_entries.append(f"未知格式: {resource_name} (层 {idx})")
+                    # 记录被使用的WEM ID
+                    used_wem_ids.add(u32_id)
                 else:
                     source_info["SourceType"] = "Unrecognized"
                     source_info["WemID"] = None
@@ -425,6 +529,9 @@ def build_mapping():
         append_to_missing_wem_csv(missing_wem_buffer)
         missing_wem_buffer = []
 
+    # 输出未被使用的WEM文件列表（补集）
+    write_unused_wem_csv(used_wem_ids)
+    
     # 保存mapping
     save_mapping_json(mapping_data)
     elapsed = time.time() - start_time
@@ -433,12 +540,11 @@ def build_mapping():
     print(f"[完成] Mapping构建完成!")
     print(f"[*] 总资源: {len(mapping_data)}")
     print(f"[*] 跳过: {skipped_count} | 错误: {error_count}")
+    print(f"[*] 被使用的WEM数量: {len(used_wem_ids)}")
     print(f"[*] 耗时: {elapsed:.1f}秒")
     print(f"[*] 已保存到: {MAPPING_JSON}")
     if MAPPING_LOG_FILE.exists():
         print(f"[*] 详细日志: {MAPPING_LOG_FILE}")
-    if MISSING_WEM_CSV.exists():
-        print(f"[*] 缺失WEM记录: {MISSING_WEM_CSV}")
     print("="*60)
 
     return mapping_data
