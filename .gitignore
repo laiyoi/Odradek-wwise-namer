@@ -6,3 +6,5 @@ ww*
 *csv
 *.xml
 *.log
+WemLabeler/bin/
+WemLabeler/obj/
