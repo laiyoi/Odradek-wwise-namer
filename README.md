@@ -148,6 +148,25 @@ python export_sounds.py 12
   - 专注音频导出，支持断点续传
   - 自动记录导出进度到 `export_progress.json`
 
+### 步骤 6：标注未使用的 WEM 文件（WemLabeler）
+
+使用 WemLabeler 对步骤 5 生成的 `unused_wem_with_banks.csv` 进行文本标注：
+
+```bash
+cd d:\Odradek-wwise-namer
+# 直接运行 WemLabeler.exe，或通过 dotnet run 启动
+dotnet run --project WemLabeler
+```
+
+此工具提供：
+- 左侧文件列表，支持 CSV 加载与自动保存
+- 实时 WEM 音频预览（通过 vgmstream 解码 + WASAPI 播放）
+- 波形可视化，可点击跳转
+- 批量导出已标注的 WAV 文件（以标注内容为文件名）
+- 中英文界面切换
+
+详细使用说明请参阅 [WemLabeler/README.md](WemLabeler/README.md)。
+
 ## 项目结构
 
 ```
@@ -168,6 +187,14 @@ Odradek-wwise-namer/
 ├── build_audio_manifest.py   # 构建音频资源清单
 ├── fix_negative_ids.py   # 修复 JSON 中的负数 ID
 ├── link_unused_wem.py    # 分析未使用的 WEM 文件来源
+├── WemLabeler/           # WEM 标注工具 (WPF)
+│   ├── MainWindow.xaml   # 主窗口布局
+│   ├── MainWindow.xaml.cs# 主逻辑（播放、标注、导出）
+│   ├── WemEntry.cs       # 数据模型
+│   ├── Locale.cs         # 国际化管理
+│   ├── ConfigManager.cs  # 配置读写
+│   ├── locales/          # 语言文件 (zh-CN / en-US)
+│   └── README.md         # 工具使用说明
 └── README.md             # 本文件
 ```
 
@@ -188,6 +215,13 @@ Odradek-wwise-namer/
 | 文件 | 说明 |
 |------|------|
 | `unused_wem_with_banks.csv` | 未被使用的 WEM 文件的完整来源信息，包含 WemRes 坐标、bank 信息和 WwiseID 关联 |
+
+### 来自 WemLabeler
+| 文件 | 说明 |
+|------|------|
+| `labeled_wem_files.csv` | 标注结果 CSV，包含所有 WEM 文件及其 Label 字段 |
+| `config.json` | 工具配置文件（vgmstream 路径、语言等） |
+| `logs/vgmstream_YYYYMMDD.log` | vgmstream 解码日志 |
 
 ## 注意事项
 

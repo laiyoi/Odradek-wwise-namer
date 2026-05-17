@@ -145,6 +145,25 @@ The script uses a two-phase processing architecture for better efficiency:
   - Focus on audio export with resume support
   - Automatically record export progress to `export_progress.json`
 
+### Step 6: Label Unused WEM Files (WemLabeler)
+
+Use WemLabeler to label the `unused_wem_with_banks.csv` generated in Step 5:
+
+```bash
+cd d:\Odradek-wwise-namer
+# Run WemLabeler.exe directly, or launch via dotnet run
+dotnet run --project WemLabeler
+```
+
+This tool provides:
+- File list with CSV loading and auto-save
+- Real-time WEM audio preview (vgmstream decode + WASAPI playback)
+- Waveform visualization with click-to-seek
+- Batch export of labeled WAV files (using labels as filenames)
+- Chinese / English UI switching
+
+For detailed usage, see [WemLabeler/README.md](WemLabeler/README.md).
+
 ## Project Structure
 
 ```
@@ -165,6 +184,14 @@ Odradek-wwise-namer/
 ├── build_audio_manifest.py   # Build audio resource manifest
 ├── fix_negative_ids.py   # Fix negative IDs in JSON
 ├── link_unused_wem.py    # Analyze origin of unused WEM files
+├── WemLabeler/           # WEM Labeling Tool (WPF)
+│   ├── MainWindow.xaml   # Main window layout
+│   ├── MainWindow.xaml.cs# Main logic (playback, labeling, export)
+│   ├── WemEntry.cs       # Data model
+│   ├── Locale.cs         # i18n manager
+│   ├── ConfigManager.cs  # Config read/write
+│   ├── locales/          # Language files (zh-CN / en-US)
+│   └── README.md         # Tool usage guide
 └── README_EN.md          # This file
 ```
 
@@ -185,6 +212,13 @@ After running the script, the following files will be generated:
 | File | Description |
 |------|-------------|
 | `unused_wem_with_banks.csv` | Complete origin information for unused WEM files, including WemRes coordinates, bank information, and WwiseID associations |
+
+### From WemLabeler
+| File | Description |
+|------|-------------|
+| `labeled_wem_files.csv` | Labeled CSV result, containing all WEM files with their Label field |
+| `config.json` | Tool configuration file (vgmstream path, language, etc.) |
+| `logs/vgmstream_YYYYMMDD.log` | vgmstream decode logs |
 
 ## Notes
 
