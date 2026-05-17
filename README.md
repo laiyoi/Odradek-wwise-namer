@@ -18,7 +18,6 @@
 - [wwiser](https://github.com/bnnm/wwiser) - 用于解析 Wwise Bank 并生成 TXTP 文件
 - [vgmstream](https://github.com/vgmstream/vgmstream) - 用于将 WEM 转换为 WAV
 - Python 3.x
-- PowerShell
 
 ## 使用步骤
 
@@ -28,7 +27,7 @@
 
 | 资源类型                  | 导出格式       | 导出路径                                   |
 | --------------------- | ---------- | -------------------------------------- |
-| WwiseWemResource      | `.wem` 文件  | `d:\Odradek-wwise-namer\WemNamer\WEM`  |
+| WwiseWemResource      | `.wem` 文件  | `d:\Odradek-wwise-namer\WemResWem`     |
 | WwiseWemResource      | `.json` 文件 | `d:\Odradek-wwise-namer\WemRes`        |
 | WwiseBankResource     | `.json` 文件 | `d:\Odradek-wwise-namer\BankRes`       |
 | GraphSoundResource    | `.json` 文件 | `d:\Odradek-wwise-namer\GraphSoundRes` |
@@ -36,24 +35,7 @@
 | NodeConstantsResource | `.json` 文件 | `d:\Odradek-wwise-namer\NodeConstRes`  |
 | WwiseID               | `.json` 文件 | `d:\Odradek-wwise-namer\WwiseID`       |
 
-### 步骤 2：运行重命名和提取脚本
-
-#### 2.1 重命名 WEM 文件
-
-运行 PowerShell 脚本，根据 JSON 中的 WemID 重命名 WEM 文件：
-
-```powershell
-cd d:\Odradek-wwise-namer\WemNamer
-.\jsonrename.ps1
-```
-
-此脚本会：
-
-- 读取 `WemNamer\WEM` 中的 `.wem` 文件
-- 根据 `WemRes` 中对应 JSON 的 `WemID` 重命名文件
-- 将重命名后的文件移动到 `WemNamer\RENAMED` 目录
-
-#### 2.2 提取 BNK 文件
+### 步骤 2：提取 BNK 文件
 
 运行 Python 脚本，从 JSON 中提取 Wwise Bank 数据：
 
@@ -129,6 +111,8 @@ python link_unused_wem.py
 
 ```python
 BASE_DIR = Path(r"D:\Odradek-wwise-namer")          # 项目根目录
+WEM_RES_WEM_DIR = BASE_DIR / "WemResWem"             # Streaming WEM 文件（导出为 .wem）
+WEM_RES_DIR = BASE_DIR / "WemRes"                    # WwiseWemResource JSON 文件
 OUTPUT_DIR = Path(r"G:\ds2 unpack\wems\Exported_Audio")  # 导出目录
 VGMSTREAM_CLI = Path(r"E:\下载\odradek\vgmstream-r2083\vgmstream-cli.exe")  # vgmstream 路径
 ```
@@ -168,14 +152,12 @@ python export_sounds.py 12
 
 ```
 Odradek-wwise-namer/
-├── WemNamer/
-│   ├── WEM/              # 原始 WEM 文件（从 Odradek 导出）
-│   ├── RENAMED/          # 重命名后的 WEM 文件
-│   └── jsonrename.ps1    # WEM 重命名脚本
+├── WemResWem/            # WwiseWemResource .wem 文件（按坐标命名）
 ├── WemRes/               # WwiseWemResource JSON 文件
 ├── BankRes/              # WwiseBankResource JSON 文件
 ├── Extracted_Banks/      # 提取的 BNK 文件
-│   └── txtp/             # wwiser 生成的 TXTP 文件
+│   ├── txtp/             # wwiser 生成的 TXTP 文件
+│   └── banks.xml         # wwiser 生成的 bank 信息
 ├── GraphSoundRes/        # GraphSoundResource JSON 文件
 ├── GraphPgmRes/          # GraphProgramResource JSON 文件
 ├── NodeConstRes/         # NodeConstantsResource JSON 文件
@@ -185,6 +167,7 @@ Odradek-wwise-namer/
 ├── export_by_id.py       # 按 ID 导出指定音频
 ├── build_audio_manifest.py   # 构建音频资源清单
 ├── fix_negative_ids.py   # 修复 JSON 中的负数 ID
+├── link_unused_wem.py    # 分析未使用的 WEM 文件来源
 └── README.md             # 本文件
 ```
 
@@ -211,7 +194,7 @@ Odradek-wwise-namer/
 - 确保所有 JSON 资源文件正确导出，否则脚本可能无法找到对应的引用关系
 - vgmstream 路径需要根据实际情况修改
 - 导出过程可能需要较长时间，脚本支持断点续传（通过 `export_progress.json`）
-- Streaming 类型的 WEM 文件需要在 `WemNamer\RENAMED` 中存在才能正确导出
+- Streaming 类型的 WEM 文件需要在 `WemResWem` 目录中（由 Odradek 导出），文件名格式为 `WwiseWemResource_{group}_{index}.wem`
 - 如果某些 WEM 文件缺失，可以查看 `missing_wem_files.csv` 了解详情
 
 ## 致谢

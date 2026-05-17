@@ -18,7 +18,6 @@ This project utilizes Odradek as a foundation to automate the naming and exporti
 - [wwiser](https://github.com/bnnm/wwiser) - For parsing Wwise Banks and generating TXTP files
 - [vgmstream](https://github.com/vgmstream/vgmstream) - For converting WEM to WAV
 - Python 3.x
-- PowerShell
 
 ## Usage Steps
 
@@ -28,7 +27,7 @@ Use Odradek to export the following resources from Death Stranding 2 (all in JSO
 
 | Resource Type | Export Format | Export Path |
 |---------|---------|---------|
-| WwiseWemResource | `.wem` files | `d:\Odradek-wwise-namer\WemNamer\WEM` |
+| WwiseWemResource | `.wem` files | `d:\Odradek-wwise-namer\WemResWem` |
 | WwiseWemResource | `.json` files | `d:\Odradek-wwise-namer\WemRes` |
 | WwiseBankResource | `.json` files | `d:\Odradek-wwise-namer\BankRes` |
 | GraphSoundResource | `.json` files | `d:\Odradek-wwise-namer\GraphSoundRes` |
@@ -36,23 +35,7 @@ Use Odradek to export the following resources from Death Stranding 2 (all in JSO
 | NodeConstantsResource | `.json` files | `d:\Odradek-wwise-namer\NodeConstRes` |
 | WwiseID | `.json` files | `d:\Odradek-wwise-namer\WwiseID` |
 
-### Step 2: Run Renaming and Extraction Scripts
-
-#### 2.1 Rename WEM Files
-
-Run the PowerShell script to rename WEM files based on WemID from JSON:
-
-```powershell
-cd d:\Odradek-wwise-namer\WemNamer
-.\jsonrename.ps1
-```
-
-This script will:
-- Read `.wem` files from `WemNamer\WEM`
-- Rename files based on `WemID` from corresponding JSON in `WemRes`
-- Move renamed files to `WemNamer\RENAMED` directory
-
-#### 2.2 Extract BNK Files
+### Step 2: Extract BNK Files
 
 Run the Python script to extract Wwise Bank data from JSON:
 
@@ -125,6 +108,8 @@ In `export_sounds.py`, you can modify the following configurations:
 
 ```python
 BASE_DIR = Path(r"D:\Odradek-wwise-namer")          # Project root directory
+WEM_RES_WEM_DIR = BASE_DIR / "WemResWem"             # Streaming WEM files (exported as .wem)
+WEM_RES_DIR = BASE_DIR / "WemRes"                    # WwiseWemResource JSON files
 OUTPUT_DIR = Path(r"G:\ds2 unpack\wems\Exported_Audio")  # Export directory
 VGMSTREAM_CLI = Path(r"E:\下载\odradek\vgmstream-r2083\vgmstream-cli.exe")  # vgmstream path
 ```
@@ -164,10 +149,7 @@ The script uses a two-phase processing architecture for better efficiency:
 
 ```
 Odradek-wwise-namer/
-├── WemNamer/
-│   ├── WEM/              # Original WEM files (exported from Odradek)
-│   ├── RENAMED/          # Renamed WEM files
-│   └── jsonrename.ps1    # WEM renaming script
+├── WemResWem/            # WwiseWemResource .wem files (named by coordinates)
 ├── WemRes/               # WwiseWemResource JSON files
 ├── BankRes/              # WwiseBankResource JSON files
 ├── Extracted_Banks/      # Extracted BNK files
@@ -209,7 +191,7 @@ After running the script, the following files will be generated:
 - Ensure all JSON resource files are correctly exported, otherwise scripts may fail to find corresponding references
 - vgmstream path needs to be modified according to your actual setup
 - Export process may take a long time, script supports resuming from interruption (via `export_progress.json`)
-- Streaming type WEM files need to exist in `WemNamer\RENAMED` to be correctly exported
+- Streaming type WEM files need to exist in `WemResWem` directory (exported by Odradek), filenames follow `WwiseWemResource_{group}_{index}.wem` format
 - If some WEM files are missing, check `missing_wem_files.csv` for details
 
 ## Credits

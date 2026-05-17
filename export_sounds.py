@@ -14,8 +14,10 @@ NODE_CONST_RES_DIR = BASE_DIR / "NodeConstRes"
 WWISE_ID_DIR = BASE_DIR / "WwiseID"
 TXTP_DIR = BASE_DIR / "Extracted_Banks" / "txtp"
 BANKS_XML = BASE_DIR / "Extracted_Banks" / "banks.xml"
-# 从指定路径读取已重命名的wem文件（文件名为wemid，可能有负数需要转换）
-RENAMED_WEM_DIR = Path(r"G:\ds2 unpack\wems\RENAMED")
+# 从WemResWem读取wem文件（文件名格式: WwiseWemResource_{group}_{index}.wem）
+WEM_RES_WEM_DIR = BASE_DIR / "WemResWem"
+# 从WemRes读取JSON获取WemID
+WEM_RES_DIR = BASE_DIR / "WemRes"
 OUTPUT_DIR = Path(r"G:\ds2 unpack\wems\Exported_Audio")
 VGMSTREAM_CLI = Path(r"E:\下载\odradek\vgmstream-r2083\vgmstream-cli.exe")
 PROGRESS_FILE = BASE_DIR / "export_progress.json"
@@ -86,20 +88,28 @@ def build_txtp_index():
     return txtp_index
 
 
-def build_renamed_wem_index():
-    """构建重命名wem文件索引，处理u32负数文件名"""
+def build_wem_res_wem_index():
+    """从WemResWem构建WEM文件索引
+    使用WemRes JSON获取WemID，文件名格式: WwiseWemResource_{group}_{index}.wem
+    返回 {WemID: 文件路径}"""
     wem_index = {}
-    if not RENAMED_WEM_DIR.exists():
+    if not WEM_RES_WEM_DIR.exists():
         return wem_index
-    for filepath in RENAMED_WEM_DIR.iterdir():
+    wem_filename_pattern = re.compile(r'WwiseWemResource_(\d+)_(\d+)\.wem')
+    for filepath in WEM_RES_WEM_DIR.iterdir():
         if not filepath.is_file() or filepath.suffix != '.wem':
             continue
-        try:
-            file_id = int(filepath.stem)
-            u32_id = file_id & 0xFFFFFFFF
-            wem_index[u32_id] = str(filepath)
-        except ValueError:
+        match = wem_filename_pattern.match(filepath.name)
+        if not match:
             continue
+        group, index = match.group(1), match.group(2)
+        json_path = WEM_RES_DIR / f"WwiseWemResource_{group}_{index}.json"
+        if not json_path.exists():
+            continue
+        data = load_json(json_path)
+        if data and 'WemID' in data:
+            wem_id = int(data['WemID']) & 0xFFFFFFFF
+            wem_index[wem_id] = str(filepath)
     return wem_index
 
 
@@ -165,8 +175,8 @@ def export_audio(temp_txtp_content, output_wav, vgmstream_path):
             temp_txtp_path.unlink()
 
 
-def export_renamed_wem(wem_path, output_wav, vgmstream_path):
-    """使用vgmstream导出重命名的wem文件"""
+def export_wem_file(wem_path, output_wav, vgmstream_path):
+    """使用vgmstream导出wem文件"""
     try:
         cmd = [str(vgmstream_path), "-o", str(output_wav), str(wem_path)]
         result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -200,48 +210,14 @@ def log_to_file(message):
         pass
 
 
-def append_to_missing_wem_csv(csv_lines):
-    """动态追加缺失WEM记录到CSV文件（被引用但找不到的WEM）"""
-    global csv_lock
-    if not csv_lines:
-        return
-
-    while csv_lock:
-        import time
-        time.sleep(0.01)
-
-    csv_lock = True
-    try:
-        write_header = not MISSING_WEM_CSV.exists()
-        with open(MISSING_WEM_CSV, 'a', encoding='utf-8') as f:
-            if write_header:
-                f.write("WemID,ResourceName,Reason\n")
-            for line in csv_lines:
-                f.write(line + "\n")
-                f.flush()
-    except Exception as e:
-        print(f"追加缺失WEM CSV失败: {e}")
-    finally:
-        csv_lock = False
-
-
-def clear_missing_wem_csv():
-    """清理缺失WEM CSV文件"""
-    if MISSING_WEM_CSV.exists():
-        try:
-            MISSING_WEM_CSV.unlink()
-        except Exception as e:
-            print(f"清理缺失WEM CSV失败: {e}")
-
-
 def write_unused_wem_csv(used_wem_ids):
     """写入未被使用的WEM文件列表（补集）"""
-    renamed_wem_index = build_renamed_wem_index()
+    wem_res_wem_index = build_wem_res_wem_index()
     unused_wems = []
     
-    for wem_id in renamed_wem_index:
+    for wem_id in wem_res_wem_index:
         if wem_id not in used_wem_ids:
-            wem_path = Path(renamed_wem_index[wem_id])
+            wem_path = Path(wem_res_wem_index[wem_id])
             unused_wems.append({
                 "WemID": wem_id,
                 "Filename": wem_path.name,
@@ -267,21 +243,18 @@ def build_mapping():
     print("[阶段一] 构建音频映射表...")
     print("="*60)
 
-    # 清空旧的日志文件和CSV
+    # 清空旧的日志文件
     if MAPPING_LOG_FILE.exists():
         MAPPING_LOG_FILE.unlink()
-    clear_missing_wem_csv()
 
     start_time = time.time()
     txtp_index = build_txtp_index()
-    renamed_wem_index = build_renamed_wem_index()
+    wem_res_wem_index = build_wem_res_wem_index()
     bank_media_index = build_bank_media_index()
 
     mapping_data = []
     skipped_count = 0
     error_count = 0
-    missing_wem_buffer = []
-    MISSING_WEM_BUFFER_SIZE = 10
     
     # 收集所有被使用的WEM ID（用于计算补集）
     used_wem_ids = set()
@@ -295,7 +268,7 @@ def build_mapping():
     total_files = len(all_files)
 
     print(f"[*] 扫描到 {total_files} 个 GraphSoundResource 文件")
-    print(f"[*] TXTP索引: {len(txtp_index)} 个 | WEM索引: {len(renamed_wem_index)} 个 | Bank索引: {len(bank_media_index)} 个")
+    print(f"[*] TXTP索引: {len(txtp_index)} 个 | WEM索引: {len(wem_res_wem_index)} 个 | Bank索引: {len(bank_media_index)} 个")
     print("-"*60)
 
     for i, filepath in enumerate(all_files, 1):
@@ -473,7 +446,7 @@ def build_mapping():
                     if u32_id:
                         used_wem_ids.add(u32_id)
                 elif clean_line.startswith("wem/"):
-                    if u32_id and u32_id in renamed_wem_index:
+                    if u32_id and u32_id in wem_res_wem_index:
                         source_info["SourceType"] = "Streaming"
                         source_info["WemRes_Coord"] = f"WemID:{u32_id}"
                         layer_results.append(f"S{idx}")
@@ -486,12 +459,6 @@ def build_mapping():
                         layer_results.append(f"S{idx}(缺失)")
                         # 记录到日志文件
                         log_entries.append(f"Streaming文件缺失: {resource_name} (WemID: {u32_id})")
-                        # 记录到缺失WEM CSV
-                        csv_line = f"{u32_id},{resource_name},Streaming文件缺失"
-                        missing_wem_buffer.append(csv_line)
-                        if len(missing_wem_buffer) >= MISSING_WEM_BUFFER_SIZE:
-                            append_to_missing_wem_csv(missing_wem_buffer)
-                            missing_wem_buffer = []
                 elif u32_id:
                     source_info["SourceType"] = "UnknownFormat"
                     has_error = True
@@ -523,11 +490,6 @@ def build_mapping():
         # 将错误信息写入日志文件
         for log_entry in log_entries:
             log_to_file(log_entry)
-
-    # 保存最后剩余的缺失WEM记录
-    if missing_wem_buffer:
-        append_to_missing_wem_csv(missing_wem_buffer)
-        missing_wem_buffer = []
 
     # 输出未被使用的WEM文件列表（补集）
     write_unused_wem_csv(used_wem_ids)
@@ -567,7 +529,7 @@ def export_from_mapping():
         print("[!] Mapping文件为空或损坏")
         return None, None
 
-    renamed_wem_index = build_renamed_wem_index()
+    wem_res_wem_index = build_wem_res_wem_index()
 
     if not OUTPUT_DIR.exists():
         OUTPUT_DIR.mkdir(parents=True)
@@ -594,7 +556,7 @@ def export_from_mapping():
     processed_count = 0
 
     print(f"[*] 加载了 {total} 个mapping条目")
-    print(f"[*] WEM索引: {len(renamed_wem_index)} 个 | 已存在: {len(existing_files)} | 已处理: {len(processed)}")
+    print(f"[*] WEM索引: {len(wem_res_wem_index)} 个 | 已存在: {len(existing_files)} | 已处理: {len(processed)}")
     print("-"*60)
 
     for i, item in enumerate(mapping_data, 1):
@@ -652,8 +614,8 @@ def export_from_mapping():
                     export_results.append(f"E{idx}:失败")
 
             elif source_type == "Streaming":
-                if u32_id and u32_id in renamed_wem_index:
-                    wem_path = renamed_wem_index[u32_id]
+                if u32_id and u32_id in wem_res_wem_index:
+                    wem_path = wem_res_wem_index[u32_id]
 
                     base_name = sanitize_filename(resource_name)
                     if len(audio_sources) > 1:
@@ -667,7 +629,7 @@ def export_from_mapping():
                         export_results.append(f"S{idx}:已存在")
                         continue
 
-                    success = export_renamed_wem(wem_path, output_path, VGMSTREAM_CLI)
+                    success = export_wem_file(wem_path, output_path, VGMSTREAM_CLI)
                     if success:
                         report["success"].append(output_name)
                         export_results.append(f"S{idx}:OK")
