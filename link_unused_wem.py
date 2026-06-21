@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 
-BASE_DIR = Path(r"D:\Odradek-wwise-namer")
+BASE_DIR = Path(r"E:\Odradek-wwise-namer")
 BANKS_XML = BASE_DIR / "Extracted_Banks" / "banks.xml"
 WEM_RES_JSON_DIR = BASE_DIR / "WemResJson"
 WEM_RES_WEM_DIR = Path("G:\ds2 unpack\wems\WemResWem")
