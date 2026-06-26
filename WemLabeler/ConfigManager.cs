@@ -7,7 +7,6 @@ public class AppConfig
 {
     public string? LastCsvPath { get; set; }
     public string? VgmstreamPath { get; set; }
-    public string? LastExportPath { get; set; }
     public bool AutoPlay { get; set; }
     public string Language { get; set; } = "zh-CN";
 }

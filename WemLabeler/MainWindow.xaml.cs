@@ -30,11 +30,14 @@ public partial class MainWindow : Window
     private DateTime _playbackStartTime;
     private DispatcherTimer? _playbackTimer;
     private bool _suppressLabelEvents;
+    private bool _suppressSelectionEvents;
     private CancellationTokenSource? _loadCts;
     private string? _loadedCsvPath;
-    private string? _loadedExportPath;
     private AppConfig _config = new();
     private List<string> _originalHeader = new();
+    private string? _sortPropertyName;
+    private bool _sortAscending = true;
+    private CancellationTokenSource? _durationCts;
 
     private MenuItem _fileMenuItem = null!;
     private MenuItem _openCsvItem = null!;
@@ -195,9 +198,12 @@ public partial class MainWindow : Window
         }
         switch (e.Key)
         {
-            case Key.Left:
-            case Key.Right:
+            case Key.Up:
+            case Key.Down:
             case Key.Space:
+                // 光标在标注输入框时解放空格键（可以输入空格）
+                if (e.Key == Key.Space && LabelTextBox.IsKeyboardFocusWithin)
+                    break;
                 e.Handled = true;
                 Window_KeyDown(sender, e);
                 break;
@@ -215,9 +221,11 @@ public partial class MainWindow : Window
         if (e.KeyboardDevice.Modifiers == ModifierKeys.Control) return;
         switch (e.Key)
         {
-            case Key.Left: e.Handled = true; if (_currentIndex > 0) Navigate(-1); break;
-            case Key.Right: e.Handled = true; if (_currentIndex < _entries.Count - 1) Navigate(1); break;
-            case Key.Space: e.Handled = true;
+            case Key.Up: e.Handled = true; if (_currentIndex > 0) Navigate(-1); break;
+            case Key.Down: e.Handled = true; if (_currentIndex < _entries.Count - 1) Navigate(1); break;
+            case Key.Space:
+                if (LabelTextBox.IsKeyboardFocusWithin) break;
+                e.Handled = true;
                 if (_vgmstreamProcess != null && !_vgmstreamProcess.HasExited) StopPlayback();
                 else PlayCurrent();
                 break;
@@ -325,13 +333,29 @@ public partial class MainWindow : Window
                     TrySet(colMap, parts, "wemfile", v => entry.Filename = v);
                     TrySet(colMap, parts, "wempath", v => entry.Path = v);
                     TrySet(colMap, parts, "foundinbanks", v => entry.FoundInBanks = v);
+                    TrySet(colMap, parts, "foundinbankres", v => entry.FoundInBanks = v);
                     TrySet(colMap, parts, "bankcount", v => entry.BankCount = v);
                     TrySet(colMap, parts, "banks", v => entry.Banks = v);
+                    TrySet(colMap, parts, "txtpfiles", v => entry.Banks = v);
                     if (hasLabel && colMap.TryGetValue("label", out int lidx) && lidx < parts.Count)
                     {
                         var label = parts[lidx];
                         if (!string.IsNullOrWhiteSpace(label)) entry.Label = label;
                     }
+                    // Read duration from CSV if available (format: M:SS.FFF or H:MM:SS.FFF)
+                    if (colMap.TryGetValue("duration", out int didx) && didx < parts.Count)
+                    {
+                        var durStr = parts[didx];
+                        if (!string.IsNullOrWhiteSpace(durStr) && durStr != "—")
+                        {
+                            var d = ParseDurationDisplay(durStr);
+                            if (d >= 0) entry.DurationSeconds = d;
+                        }
+                    }
+                    // Preserve all column values so unknown columns aren't lost on write-back
+                    foreach (var kv in colMap)
+                        if (kv.Value < parts.Count)
+                            entry.ExtraColumns[kv.Key] = parts[kv.Value];
                     tempEntries.Add(entry);
                 }
                 if (token.IsCancellationRequested) return;
@@ -340,15 +364,14 @@ public partial class MainWindow : Window
                     foreach (var e in tempEntries) _entries.Add(e);
                     _originalHeader = ParseCsvLine(header);
                     _loadedCsvPath = path;
-                    _loadedExportPath = Path.Combine(Path.GetDirectoryName(path) ?? ".", "labeled_wem_files.csv");
                     _config.LastCsvPath = path;
-                    _config.LastExportPath = _loadedExportPath;
                     ConfigManager.Save(_config);
                     SetBusy(false);
                     UpdateProgress();
                     SetStatus(Locale.S("status_loaded", _entries.Count, Path.GetFileName(path)));
                     Title = Locale.S("title", Path.GetFileName(path), _entries.Count);
                     if (_entries.Count > 0) SelectEntry(0);
+                    _ = Dispatcher.InvokeAsync(() => StartFetchingDurations(), DispatcherPriority.ApplicationIdle);
                 });
             }
             catch (OperationCanceledException) { }
@@ -429,11 +452,67 @@ public partial class MainWindow : Window
 
     private void FileListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (FileListView.SelectedIndex >= 0 && FileListView.SelectedIndex != _currentIndex)
-        { StopPlayback(); SaveCurrentLabel(); SelectEntry(FileListView.SelectedIndex); }
+        if (_suppressSelectionEvents) return;
+        if (FileListView.SelectedItem is WemEntry selected)
+        {
+            var idx = _entries.IndexOf(selected);
+            if (idx != _currentIndex)
+            { StopPlayback(); SaveCurrentLabel(); SelectEntry(idx); }
+        }
     }
 
     private void FileListView_MouseDoubleClick(object sender, MouseButtonEventArgs e) => PlayCurrent();
+
+    private void FileListView_ColumnHeaderClick(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is not GridViewColumnHeader header) return;
+        if (header.Column.DisplayMemberBinding is not System.Windows.Data.Binding binding) return;
+
+        var propName = binding.Path.Path switch
+        {
+            "StatusMark" => "HasLabel",
+            "DisplayLabel" => "Label",
+            "DurationDisplay" => "DurationSeconds",
+            _ => binding.Path.Path
+        };
+
+        if (_sortPropertyName == propName)
+            _sortAscending = !_sortAscending;
+        else
+        {
+            _sortPropertyName = propName;
+            _sortAscending = true;
+        }
+
+        // Update sort
+        var view = System.Windows.Data.CollectionViewSource.GetDefaultView(_entries);
+        using (view.DeferRefresh())
+        {
+            view.SortDescriptions.Clear();
+            view.SortDescriptions.Add(new System.ComponentModel.SortDescription(
+                propName, _sortAscending ? System.ComponentModel.ListSortDirection.Ascending
+                                          : System.ComponentModel.ListSortDirection.Descending));
+        }
+
+        // Update sort arrows on all column headers
+        if (FileListView.View is GridView gv)
+        {
+            foreach (var col in gv.Columns)
+            {
+                var h = col.Header as string;
+                if (h != null)
+                {
+                    // Strip existing arrow
+                    if (h.EndsWith(" ▲")) h = h[..^2];
+                    else if (h.EndsWith(" ▼")) h = h[..^2];
+                    col.Header = h;
+                }
+            }
+            // Add arrow to clicked column
+            var baseHeader = (header.Column.Header as string) ?? "";
+            header.Column.Header = baseHeader + (_sortAscending ? " ▲" : " ▼");
+        }
+    }
 
     private void SelectEntry(int index)
     {
@@ -444,8 +523,14 @@ public partial class MainWindow : Window
 
         _currentIndex = index;
         _suppressLabelEvents = true;
-        FileListView.SelectedIndex = index;
-        FileListView.ScrollIntoView(FileListView.Items[index]);
+        var visualIdx = FileListView.Items.IndexOf(_entries[index]);
+        if (visualIdx >= 0)
+        {
+            _suppressSelectionEvents = true;
+            FileListView.SelectedIndex = visualIdx;
+            FileListView.ScrollIntoView(FileListView.Items[visualIdx]);
+            _suppressSelectionEvents = false;
+        }
 
         var entry = _entries[index];
         InfoFilename.Text = entry.Filename;
@@ -470,9 +555,18 @@ public partial class MainWindow : Window
 
     private void Navigate(int delta)
     {
-        var newIndex = _currentIndex + delta;
-        if (newIndex < 0 || newIndex >= _entries.Count) return;
-        StopPlayback(); SaveCurrentLabel(); SelectEntry(newIndex);
+        var view = System.Windows.Data.CollectionViewSource.GetDefaultView(_entries);
+        var items = view.Cast<WemEntry>().ToList();
+        var current = _currentIndex >= 0 ? _entries[_currentIndex] : null;
+        if (current == null) return;
+        var visualIdx = items.IndexOf(current);
+        if (visualIdx < 0) return;
+        var newVisualIdx = visualIdx + delta;
+        if (newVisualIdx < 0 || newVisualIdx >= items.Count) return;
+        var newEntry = items[newVisualIdx];
+        var realIdx = _entries.IndexOf(newEntry);
+        if (realIdx < 0) return;
+        StopPlayback(); SaveCurrentLabel(); SelectEntry(realIdx);
     }
 
     private void PrevButton_Click(object sender, RoutedEventArgs e) => Navigate(-1);
@@ -626,7 +720,8 @@ public partial class MainWindow : Window
                 VgmLog($"Downmix: {srcFmt.Channels}ch → 2ch");
             }
 
-            var targetFmt = new WaveFormat(srcFmt.SampleRate, 16, 2);
+            var targetCh = Math.Min(srcFmt.Channels, 2);
+            var targetFmt = new WaveFormat(srcFmt.SampleRate, 16, targetCh);
 
             var allData = new List<byte>();
             var floatBuf = new float[targetFmt.SampleRate * 2];
@@ -990,15 +1085,11 @@ public partial class MainWindow : Window
 
     private void AutoSaveCsv()
     {
-        if (_entries.Count == 0) return;
-        var path = _loadedExportPath ?? Path.Combine(
-            Path.GetDirectoryName(_loadedCsvPath ?? AppDomain.CurrentDomain.BaseDirectory) ?? ".",
-            "labeled_wem_files.csv");
+        if (_entries.Count == 0 || string.IsNullOrEmpty(_loadedCsvPath)) return;
         try
         {
-            WriteCsvFile(path);
-            _loadedExportPath = path;
-            SetStatus(Locale.S("status_csv_autosaved", Path.GetFileName(path)));
+            WriteCsvFile(_loadedCsvPath);
+            SetStatus(Locale.S("status_csv_autosaved", Path.GetFileName(_loadedCsvPath)));
         }
         catch (Exception ex)
         {
@@ -1008,22 +1099,35 @@ public partial class MainWindow : Window
 
     private void WriteCsvFile(string path)
     {
-        using var writer = new StreamWriter(path, false, Encoding.UTF8);
-        var hasLabelInHeader = _originalHeader.Any(h =>
-            h.Equals("Label", StringComparison.OrdinalIgnoreCase));
-        if (hasLabelInHeader)
-            writer.WriteLine(string.Join(",", _originalHeader));
-        else
-            writer.WriteLine(string.Join(",", _originalHeader) + ",Label");
-        foreach (var entry in _entries)
+        if (_entries.Count == 0) return;
+        var tmpPath = path + ".tmp";
+        using (var writer = new StreamWriter(tmpPath, false, Encoding.UTF8))
         {
-            var parts = new List<string>();
-            foreach (var col in _originalHeader)
-                parts.Add(EscapeCsv(GetColumnValue(entry, col)));
-            if (!hasLabelInHeader)
-                parts.Add(EscapeCsv(entry.Label ?? ""));
-            writer.WriteLine(string.Join(",", parts));
+            var hasLabelInHeader = _originalHeader.Any(h =>
+                h.Equals("Label", StringComparison.OrdinalIgnoreCase));
+            var hasDurationInHeader = _originalHeader.Any(h =>
+                h.Equals("Duration", StringComparison.OrdinalIgnoreCase));
+
+            var headerParts = new List<string>(_originalHeader);
+            if (!hasLabelInHeader) headerParts.Add("Label");
+            if (!hasDurationInHeader) headerParts.Add("Duration");
+            writer.WriteLine(string.Join(",", headerParts));
+
+            foreach (var entry in _entries)
+            {
+                var parts = new List<string>();
+                foreach (var col in _originalHeader)
+                    parts.Add(EscapeCsv(GetColumnValue(entry, col)));
+                if (!hasLabelInHeader)
+                    parts.Add(EscapeCsv(entry.Label ?? ""));
+                if (!hasDurationInHeader)
+                    parts.Add(EscapeCsv(entry.DurationDisplay));
+                writer.WriteLine(string.Join(",", parts));
+            }
         }
+        // Atomic replace: temp → target, preserves original if crash happens mid-write
+        try { File.Delete(path); } catch { }
+        File.Move(tmpPath, path);
     }
 
     private void UpdateProgress()
@@ -1046,17 +1150,13 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        var initDir = !string.IsNullOrEmpty(_loadedExportPath) ? Path.GetDirectoryName(_loadedExportPath) : AppDomain.CurrentDomain.BaseDirectory;
-        var initFile = !string.IsNullOrEmpty(_loadedExportPath) ? Path.GetFileName(_loadedExportPath) : "labeled_wem_files.csv";
-        var dlg = new SaveFileDialog { Title = Locale.S("dlg_export_csv"), Filter = Locale.S("filter_export"), FileName = initFile, InitialDirectory = initDir };
+        var initFile = !string.IsNullOrEmpty(_loadedCsvPath) ? Path.GetFileName(_loadedCsvPath) : "wem_files.csv";
+        var dlg = new SaveFileDialog { Title = Locale.S("dlg_export_csv"), Filter = Locale.S("filter_export"), FileName = initFile, InitialDirectory = Path.GetDirectoryName(_loadedCsvPath) ?? AppDomain.CurrentDomain.BaseDirectory };
         if (dlg.ShowDialog() != true) return;
         try
         {
             WriteCsvFile(dlg.FileName);
             var labeled = _entries.Count(e => e.HasLabel);
-            _loadedExportPath = dlg.FileName;
-            _config.LastExportPath = dlg.FileName;
-            ConfigManager.Save(_config);
             SetStatus(Locale.S("status_export", dlg.FileName, _entries.Count, labeled));
             MessageBox.Show(this, Locale.S("dlg_export_ok", dlg.FileName, _entries.Count, labeled, _entries.Count - labeled),
                 Locale.S("dlg_export_ok_title"), MessageBoxButton.OK, MessageBoxImage.Information);
@@ -1162,6 +1262,29 @@ public partial class MainWindow : Window
         return string.IsNullOrWhiteSpace(result) ? "unnamed" : result;
     }
 
+    private static double ParseDurationDisplay(string s)
+    {
+        // Try H:MM:SS.FFF first, then M:SS.FFF
+        var m = System.Text.RegularExpressions.Regex.Match(s,
+            @"^(\d+):(\d+):([\d.]+)$");
+        if (m.Success &&
+            int.TryParse(m.Groups[1].Value, out var h) &&
+            int.TryParse(m.Groups[2].Value, out var mn) &&
+            double.TryParse(m.Groups[3].Value, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var sc))
+            return h * 3600 + mn * 60 + sc;
+
+        m = System.Text.RegularExpressions.Regex.Match(s, @"^(\d+):([\d.]+)$");
+        if (m.Success &&
+            double.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var mins) &&
+            double.TryParse(m.Groups[2].Value, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var secs))
+            return mins * 60 + secs;
+
+        return -1;
+    }
+
     private static string GetColumnValue(WemEntry entry, string colName)
     {
         return colName.Trim().ToLowerInvariant() switch
@@ -1177,7 +1300,8 @@ public partial class MainWindow : Window
             "bankcount" => entry.BankCount,
             "banks" => entry.Banks,
             "label" => entry.Label ?? "",
-            _ => ""
+            "duration" => entry.DurationDisplay,
+            _ => entry.ExtraColumns.TryGetValue(colName.Trim().ToLowerInvariant(), out var v) ? v : ""
         };
     }
 
@@ -1203,6 +1327,95 @@ public partial class MainWindow : Window
             ConfigManager.Save(_config);
             SetStatus(Locale.S("status_vgmstream_set", _config.VgmstreamPath));
         }
+    }
+
+    #endregion
+
+    #region Duration Fetching
+
+    private void StartFetchingDurations()
+    {
+        _durationCts?.Cancel();
+        _durationCts = new CancellationTokenSource();
+        var token = _durationCts.Token;
+        var vgmPath = _config.VgmstreamPath;
+
+        if (string.IsNullOrEmpty(vgmPath) || !File.Exists(vgmPath))
+            return;
+
+        var pending = _entries.Where(e => e.DurationSeconds < 0).ToList();
+        if (pending.Count == 0) return;
+
+        Task.Run(async () =>
+        {
+            for (int i = 0; i < pending.Count; i++)
+            {
+                if (token.IsCancellationRequested) return;
+
+                var entry = pending[i];
+                var wemPath = entry.Path;
+                if (!File.Exists(wemPath)) continue;
+
+                try
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = vgmPath,
+                        Arguments = $"-m \"{wemPath}\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    };
+
+                    using var proc = Process.Start(psi);
+                    if (proc == null) continue;
+
+                    var output = await proc.StandardOutput.ReadToEndAsync();
+                    await proc.WaitForExitAsync();
+
+                    if (proc.ExitCode != 0) continue;
+
+                    // Parse duration from "play duration: N samples (M:S.FFF seconds)"
+                    // Try h:mm:ss.fff first, then m:ss.fff
+                    var durMatch = System.Text.RegularExpressions.Regex.Match(output,
+                        @"play duration:.*\((\d+):(\d+):([\d.]+)\s*seconds\)",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+                    if (durMatch.Success &&
+                        int.TryParse(durMatch.Groups[1].Value, out var hours) &&
+                        int.TryParse(durMatch.Groups[2].Value, out var minutes) &&
+                        double.TryParse(durMatch.Groups[3].Value, System.Globalization.NumberStyles.Any,
+                            System.Globalization.CultureInfo.InvariantCulture, out var seconds))
+                    {
+                        var dur = hours * 3600 + minutes * 60 + seconds;
+                        Dispatcher.Invoke(() => entry.DurationSeconds = dur, DispatcherPriority.Background);
+                    }
+                    else
+                    {
+                        durMatch = System.Text.RegularExpressions.Regex.Match(output,
+                            @"play duration:.*\((\d+):([\d.]+)\s*seconds\)",
+                            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                        if (durMatch.Success &&
+                            double.TryParse(durMatch.Groups[1].Value, System.Globalization.NumberStyles.Any,
+                                System.Globalization.CultureInfo.InvariantCulture, out var mins) &&
+                            double.TryParse(durMatch.Groups[2].Value, System.Globalization.NumberStyles.Any,
+                                System.Globalization.CultureInfo.InvariantCulture, out var secs))
+                        {
+                            var dur = mins * 60 + secs;
+                            Dispatcher.Invoke(() => entry.DurationSeconds = dur, DispatcherPriority.Background);
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            Dispatcher.Invoke(() =>
+            {
+                SetStatus(Locale.S("status_durations_done", pending.Count(e => e.DurationSeconds >= 0), pending.Count));
+                if (!string.IsNullOrEmpty(_loadedCsvPath)) WriteCsvFile(_loadedCsvPath);
+            });
+        }, token);
     }
 
     #endregion

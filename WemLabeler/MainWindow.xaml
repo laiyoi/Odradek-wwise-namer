@@ -31,7 +31,8 @@
             <ListView x:Name="FileListView"
                       Grid.Column="0"
                       MouseDoubleClick="FileListView_MouseDoubleClick"
-                      SelectionChanged="FileListView_SelectionChanged">
+                      SelectionChanged="FileListView_SelectionChanged"
+                      GridViewColumnHeader.Click="FileListView_ColumnHeaderClick">
                 <ListView.View>
                     <GridView>
                         <GridViewColumn Header="" Width="36">
@@ -44,6 +45,7 @@
                         <GridViewColumn Header="WemID" Width="105" DisplayMemberBinding="{Binding WemID}"/>
                         <GridViewColumn Header="Filename" Width="125" DisplayMemberBinding="{Binding Filename}"/>
                         <GridViewColumn Header="Label" Width="200" DisplayMemberBinding="{Binding DisplayLabel}"/>
+<GridViewColumn Header="Duration" Width="110" DisplayMemberBinding="{Binding DurationDisplay}"/>
                     </GridView>
                 </ListView.View>
                 <ListView.ItemContainerStyle>

@@ -5,6 +5,7 @@ namespace WemLabeler;
 public class WemEntry : INotifyPropertyChanged
 {
     private string? _label;
+    private double _durationSeconds = -1;
 
     public string WemID { get; set; } = "";
     public string Coord { get; set; } = "";
@@ -16,6 +17,33 @@ public class WemEntry : INotifyPropertyChanged
     public string FoundInBanks { get; set; } = "";
     public string BankCount { get; set; } = "";
     public string Banks { get; set; } = "";
+    public Dictionary<string, string> ExtraColumns { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public double DurationSeconds
+    {
+        get => _durationSeconds;
+        set
+        {
+            if (Math.Abs(_durationSeconds - value) > 0.001)
+            {
+                _durationSeconds = value;
+                OnPropertyChanged(nameof(DurationSeconds));
+                OnPropertyChanged(nameof(DurationDisplay));
+            }
+        }
+    }
+
+    public string DurationDisplay
+    {
+        get
+        {
+            if (_durationSeconds < 0) return "—";
+            var ts = TimeSpan.FromSeconds(_durationSeconds);
+            if (ts.Hours > 0)
+                return $"{ts.Hours}:{ts.Minutes:D2}:{ts.Seconds:D2}.{ts.Milliseconds:D3}";
+            return $"{ts.Minutes}:{ts.Seconds:D2}.{ts.Milliseconds:D3}";
+        }
+    }
 
     public string? Label
     {
