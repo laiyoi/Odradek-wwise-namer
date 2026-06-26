@@ -1,7 +1,9 @@
 WemRes
 WemNamer/RENAMED/
 ww*
-*json
+!/WemLabeler/locales/
+*.json
+!/WemLabeler/locales/*.json
 *txtp
 *csv
 *.xml
