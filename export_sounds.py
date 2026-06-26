@@ -19,7 +19,7 @@ WEM_RES_WEM_DIR = Path(r"G:\ds2 unpack\wems\WemResWem")
 # 从WemRes读取JSON获取WemID
 WEM_RES_DIR = BASE_DIR / "WemResJson"
 OUTPUT_DIR = Path(r"G:\ds2 unpack\wems\Exported_Audio")
-VGMSTREAM_CLI = Path(r"E:\下载\odradek\vgmstream-r2083\vgmstream-cli.exe")
+VGMSTREAM_CLI = Path(r"D:\下载\odradek\vgmstream-r2083\vgmstream-cli.exe")
 PROGRESS_FILE = BASE_DIR / "export_progress.json"
 STREAMING_CSV = BASE_DIR / "streaming_wem_map.csv"
 MISSING_WEM_CSV = BASE_DIR / "missing_wem_files.csv"
@@ -559,6 +559,10 @@ def export_from_mapping():
     print(f"[*] WEM索引: {len(wem_res_wem_index)} 个 | 已存在: {len(existing_files)} | 已处理: {len(processed)}")
     print("-"*60)
 
+    # --- 同名不同WwiseID冲突计数器（用于短后缀） ---
+    name_seq = {}
+    # ---
+
     for i, item in enumerate(mapping_data, 1):
         resource_name = item["ResourceName"]
         wwise_id = item["WwiseID_Value"]
@@ -568,9 +572,20 @@ def export_from_mapping():
             continue
 
         clean_name = sanitize_filename(resource_name)
-        if clean_name in existing_files:
-            report["skipped"].append(f"{resource_name} (输出文件已存在)")
-            continue
+
+        # 同名不同WwiseID冲突：后续出现的使用短数字后缀，避免覆盖
+        seq = name_seq.get(clean_name, 0)
+        name_seq[clean_name] = seq + 1
+        if seq == 0:
+            name_prefix = clean_name
+            if clean_name in existing_files:
+                report["skipped"].append(f"{resource_name} (输出文件已存在)")
+                processed.add(key)
+                processed_count += 1
+                print(f"  [{i}/{total}] {resource_name} | 跳过(文件已存在)")
+                continue
+        else:
+            name_prefix = f"{clean_name}_{seq}"
 
         # 检查是否需要导出（有实际音频源且不是错误状态）
         audio_sources = item.get("AudioSources", [])
@@ -593,7 +608,7 @@ def export_from_mapping():
                 final_path = (abs_base / raw_path.replace("../", "", 1)).resolve()
                 final_line = f"{final_path} {params}".strip()
 
-                base_name = sanitize_filename(resource_name)
+                base_name = name_prefix
                 if len(audio_sources) > 1:
                     output_name = f"{base_name}_{idx:02d}.wav"
                 else:
@@ -617,7 +632,7 @@ def export_from_mapping():
                 if u32_id and u32_id in wem_res_wem_index:
                     wem_path = wem_res_wem_index[u32_id]
 
-                    base_name = sanitize_filename(resource_name)
+                    base_name = name_prefix
                     if len(audio_sources) > 1:
                         output_name = f"{base_name}_{idx:02d}.wav"
                     else:
@@ -665,7 +680,7 @@ def export_from_mapping():
         # 一行日志输出该资源的所有处理结果
         if export_results:
             results_str = ", ".join(export_results)
-            print(f"[{processed_count}/{total}] {resource_name} | {results_str}")
+            print(f"[{i}/{total}] {resource_name} | {results_str}")
 
     # 确保最后剩余的CSV缓冲区被写入
     if csv_buffer:
