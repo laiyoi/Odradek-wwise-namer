@@ -10,3 +10,4 @@ ww*
 *.log
 WemLabeler/bin/
 WemLabeler/obj/
+*pyc

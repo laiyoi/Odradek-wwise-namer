@@ -42,6 +42,7 @@ public partial class MainWindow : Window
     private MenuItem _fileMenuItem = null!;
     private MenuItem _openCsvItem = null!;
     private MenuItem _reloadCsvItem = null!;
+    private MenuItem _openWemFolderItem = null!;
     private MenuItem _exportCsvItem = null!;
     private MenuItem _exportWavItem = null!;
     private MenuItem _vgmstreamItem = null!;
@@ -74,6 +75,8 @@ public partial class MainWindow : Window
         _openCsvItem.Click += (_, _) => OpenCsv_Click();
         _reloadCsvItem = new MenuItem { InputGestureText = "Ctrl+R" };
         _reloadCsvItem.Click += (_, _) => ReloadCsv_Click();
+        _openWemFolderItem = new MenuItem();
+        _openWemFolderItem.Click += (_, _) => OpenWemFolder_Click();
         _exportCsvItem = new MenuItem { InputGestureText = "Ctrl+E" };
         _exportCsvItem.Click += (_, _) => ExportLabels();
         _exportWavItem = new MenuItem { InputGestureText = "Ctrl+W" };
@@ -85,6 +88,8 @@ public partial class MainWindow : Window
 
         _fileMenuItem.Items.Add(_openCsvItem);
         _fileMenuItem.Items.Add(_reloadCsvItem);
+        _fileMenuItem.Items.Add(_openWemFolderItem);
+        _fileMenuItem.Items.Add(new Separator());
         _fileMenuItem.Items.Add(_exportCsvItem);
         _fileMenuItem.Items.Add(_exportWavItem);
         _fileMenuItem.Items.Add(new Separator());
@@ -123,6 +128,7 @@ public partial class MainWindow : Window
         _fileMenuItem.Header = L("menu_file");
         _openCsvItem.Header = L("menu_open_csv");
         _reloadCsvItem.Header = L("menu_reload_csv");
+        _openWemFolderItem.Header = L("menu_open_wem_folder");
         _exportCsvItem.Header = L("menu_export_csv");
         _exportWavItem.Header = L("menu_export_wav");
         _vgmstreamItem.Header = L("menu_vgmstream");
@@ -139,6 +145,7 @@ public partial class MainWindow : Window
         LabelHint.Text = L("lbl_label");
         PrevButton.Content = L("btn_prev");
         NextButton.Content = L("btn_next");
+        ExportWavCoordButton.Content = L("btn_export_wav_coord");
         FileInfoGroup.Header = L("gb_file_info");
         SourceInfoGroup.Header = L("gb_source_info");
 
@@ -266,6 +273,68 @@ public partial class MainWindow : Window
     }
 
     private void ReloadCsv_Click() { if (!string.IsNullOrEmpty(_loadedCsvPath)) LoadCsvAsync(_loadedCsvPath); }
+
+    private void OpenWemFolder_Click()
+    {
+        var folder = PickFolder(Locale.S("dlg_open_wem_folder"));
+        if (folder == null) return;
+        SetStatus(Locale.S("status_scanning_folder"));
+        Task.Run(() =>
+        {
+            try
+            {
+                var files = Directory.GetFiles(folder, "*.wem", SearchOption.AllDirectories);
+                if (files.Length == 0)
+                {
+                    Dispatcher.Invoke(() => SetStatus(Locale.S("status_folder_empty")));
+                    return;
+                }
+                var csvPath = Path.Combine(Path.GetTempPath(), "WemLabeler",
+                    $"folder_{DateTime.Now:yyyyMMddHHmmss}.csv");
+                Directory.CreateDirectory(Path.GetDirectoryName(csvPath)!);
+                using var writer = new StreamWriter(csvPath, false, Encoding.UTF8);
+                writer.WriteLine("WemID,Coord,JsonFile,IsStreaming,WemSize,WemFile,WemPath,FoundInBankRes,TxtpFiles,Label,Duration");
+                foreach (var wemPath in files)
+                {
+                    var fi = new FileInfo(wemPath);
+                    var name = Path.GetFileNameWithoutExtension(wemPath);
+                    // Try to parse WwiseWemResource_{x}_{y} pattern
+                    var m = System.Text.RegularExpressions.Regex.Match(name,
+                        @"WwiseWemResource_(\d+)_(\d+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    string wemId, coord, jsonFile, wemFile;
+                    if (m.Success)
+                    {
+                        coord = $"{m.Groups[1].Value}:{m.Groups[2].Value}";
+                        wemId = coord.Replace(":", "");
+                        jsonFile = $"WwiseWemResource_{m.Groups[1].Value}_{m.Groups[2].Value}.json";
+                        wemFile = $"{name}.wem";
+                    }
+                    else
+                    {
+                        // Fallback: use file hash as ID, empty other derived fields
+                        wemId = Math.Abs(wemPath.GetHashCode()).ToString();
+                        coord = "";
+                        jsonFile = "";
+                        wemFile = $"{name}.wem";
+                    }
+                    var size = fi.Length.ToString();
+                    var isStreaming = "False";
+                    writer.WriteLine($"{EscapeCsv(wemId)},{EscapeCsv(coord)},{EscapeCsv(jsonFile)},{EscapeCsv(isStreaming)},{EscapeCsv(size)},{EscapeCsv(wemFile)},{EscapeCsv(wemPath)},,,,");
+                }
+                Dispatcher.Invoke(() =>
+                {
+                    SetStatus(Locale.S("status_folder_scanned", files.Length));
+                    LoadCsvAsync(csvPath);
+                });
+            }
+            catch (Exception ex)
+            {
+                VgmLog($"[OpenWemFolder] error: {ex.Message}");
+                Dispatcher.Invoke(() => SetStatus(Locale.S("status_load_fail", ex.Message)));
+            }
+        });
+    }
+
     private void SetVgmstream_Click() => SetVgmstreamPath();
     private void Exit_Click() => Close();
 
@@ -407,6 +476,7 @@ public partial class MainWindow : Window
         PlayButton.IsEnabled = false;
         PrevButton.IsEnabled = false;
         NextButton.IsEnabled = false;
+        ExportWavCoordButton.IsEnabled = false;
         SaveButton.Content = Locale.S("btn_save");
         ClearWaveform();
     }
@@ -547,6 +617,7 @@ public partial class MainWindow : Window
         PlayButton.IsEnabled = true;
         PrevButton.IsEnabled = index > 0;
         NextButton.IsEnabled = index < _entries.Count - 1;
+        ExportWavCoordButton.IsEnabled = _entries.Any(e => e.HasLabel);
         _suppressLabelEvents = false;
 
         if (AutoPlayCheck.IsChecked == true) PlayCurrent();
@@ -1251,6 +1322,86 @@ public partial class MainWindow : Window
         });
     }
 
+    private void ExportWavCoordButton_Click(object sender, RoutedEventArgs e) => ExportWavCoord();
+
+    private void ExportWavCoord()
+    {
+        if (_currentIndex < 0 || _currentIndex >= _entries.Count) return;
+        var entry = _entries[_currentIndex];
+        if (!entry.HasLabel)
+        {
+            MessageBox.Show(this, Locale.S("dlg_export_wav_none"), Locale.S("dlg_no_data_title"),
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var vgmPath = _config.VgmstreamPath;
+        if (string.IsNullOrEmpty(vgmPath) || !File.Exists(vgmPath))
+        {
+            SetStatus(Locale.S("status_vgmstream_not_set"));
+            var result = MessageBox.Show(this, Locale.S("dlg_vgmstream_missing"), Locale.S("dlg_vgmstream_missing_title"),
+                MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (result == MessageBoxResult.Yes) SetVgmstreamPath();
+            return;
+        }
+        var wemPath = entry.Path;
+        if (!File.Exists(wemPath))
+        {
+            SetStatus(Locale.S("status_file_not_found_short", wemPath));
+            return;
+        }
+        var coordParts = (entry.Coord ?? "").Split(':');
+        var prefix = coordParts.Length == 2 ? $"{coordParts[0]}_{coordParts[1]}" : "unknown";
+        var safeLabel = SanitizeFileName(entry.Label ?? entry.Filename);
+        var outName = $"{prefix}_{entry.WemID}_{safeLabel}.wav";
+        var outDir = PickFolder(Locale.S("dlg_export_wav_choose"));
+        if (outDir == null) return;
+        var outPath = Path.Combine(outDir, outName);
+        if (File.Exists(outPath))
+        {
+            var r = MessageBox.Show(this,
+                Locale.S("dlg_export_overwrite", outName),
+                Locale.S("dlg_export_overwrite_title"),
+                MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (r != MessageBoxResult.Yes) return;
+        }
+
+        SetBusy(true);
+        Task.Run(() =>
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = vgmPath,
+                    Arguments = $"-o \"{outPath}\" \"{wemPath}\"",
+                    UseShellExecute = false, CreateNoWindow = true,
+                    RedirectStandardOutput = true, RedirectStandardError = true
+                };
+                using var proc = Process.Start(psi);
+                proc?.WaitForExit();
+                Dispatcher.Invoke(() =>
+                {
+                    SetBusy(false);
+                    if (proc?.ExitCode == 0 && File.Exists(outPath))
+                    {
+                        SetStatus(Locale.S("status_export_wav_done_single", outName));
+                        VgmLog($"[export WAV] OK: {outPath}");
+                    }
+                    else
+                    {
+                        SetStatus(Locale.S("status_export_wav_fail"));
+                        VgmLog($"[export WAV] FAIL: exit={proc?.ExitCode}, wem={wemPath}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.Invoke(() => { SetBusy(false); SetStatus(Locale.S("status_export_wav_fail")); });
+                VgmLog($"[export WAV] EX: {ex.Message}");
+            }
+        });
+    }
+
     private static string SanitizeFileName(string name)
     {
         var invalid = Path.GetInvalidFileNameChars();
@@ -1436,6 +1587,7 @@ public partial class MainWindow : Window
             PlayButton.IsEnabled = false;
             PrevButton.IsEnabled = false;
             NextButton.IsEnabled = false;
+            ExportWavCoordButton.IsEnabled = false;
         }
         else { Cursor = null; FileListView.IsEnabled = true; }
     }
