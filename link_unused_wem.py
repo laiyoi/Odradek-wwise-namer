@@ -1,25 +1,26 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-从WemResJson构建所有WEM的索引，交叉引用banks.xml和WemResWem
+从WemResJson构建所有WEM的索引，交叉引用BankRes(WemIDs)、WemResWem和txtp
 """
 
 import csv
-import xml.etree.ElementTree as ET
 import json
 import re
 from pathlib import Path
 
 
 BASE_DIR = Path(r"E:\Odradek-wwise-namer")
-BANKS_XML = BASE_DIR / "Extracted_Banks" / "banks.xml"
+BANK_RES_DIR = BASE_DIR / "BankRes"
+TXTP_DIR = BASE_DIR / "Extracted_Banks" / "txtp"
 WEM_RES_JSON_DIR = BASE_DIR / "WemResJson"
-WEM_RES_WEM_DIR = Path("G:\ds2 unpack\wems\WemResWem")
+WEM_RES_WEM_DIR = Path(r"G:\ds2 unpack\wems\WemResWem")
 OUTPUT_CSV = BASE_DIR / "unused_wem_with_banks.csv"
+MAPPING_EXPORT_JSON = BASE_DIR / "sound_wem_mapping_export.json"
 
 
 def build_wem_res_json_index():
-    """从WemResJson构建 WemID -> {坐标, IsStreaming, WemSize} 索引"""
+    """从WemResJson构建 WemID -> {坐标, IsStreaming} 索引"""
     index = {}
     if not WEM_RES_JSON_DIR.exists():
         print(f"[!] 找不到WemResJson目录: {WEM_RES_JSON_DIR}")
@@ -39,7 +40,6 @@ def build_wem_res_json_index():
                 'Coord': f"{parts[1]}:{parts[2]}",
                 'JsonFile': json_file.name,
                 'IsStreaming': data.get('IsStreaming', ''),
-                'WemSize': data.get('WemSize', ''),
             }
         except Exception:
             continue
@@ -63,41 +63,73 @@ def build_wem_res_wem_index():
     return index
 
 
-def build_bank_media_index():
-    media_index = {}
-    if not BANKS_XML.exists():
-        print(f"[!] 找不到banks.xml: {BANKS_XML}")
-        return media_index
+def build_bank_res_wem_ids():
+    """从BankRes JSON的WemIDs字段构建所有被bank引用的WemID集合"""
+    wem_ids_set = set()
+    if not BANK_RES_DIR.exists():
+        print(f"[!] 找不到BankRes目录: {BANK_RES_DIR}")
+        return wem_ids_set
 
+    for json_file in sorted(BANK_RES_DIR.glob("WwiseBankResource_*.json")):
+        try:
+            with open(json_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            ids = data.get('WemIDs', [])
+            if ids:
+                # 确保每个ID是32位无符号整数
+                wem_ids_set.update(int(i) & 0xFFFFFFFF for i in ids)
+        except Exception as e:
+            print(f"[!] 解析 {json_file.name} 失败: {e}")
+            continue
+    return wem_ids_set
+
+
+def build_txtp_wem_index():
+    """从txtp文件扫描所有被引用的WemID -> {wem_id: [txtp文件名, ...]}"""
+    wem_index = {}
+    if not TXTP_DIR.exists():
+        print(f"[!] 找不到txtp目录: {TXTP_DIR}")
+        return wem_index
+
+    pattern = re.compile(r'(?:##|wem/)(\d+)\.wem')
+    for txtp_file in TXTP_DIR.glob("*.txtp"):
+        if not txtp_file.is_file():
+            continue
+        try:
+            with open(txtp_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            for match in pattern.finditer(content):
+                wem_id = int(match.group(1)) & 0xFFFFFFFF
+                if wem_id not in wem_index:
+                    wem_index[wem_id] = []
+                wem_index[wem_id].append(txtp_file.name)
+        except Exception:
+            continue
+    return wem_index
+
+
+def build_used_wem_ids():
+    """从sound_wem_mapping_export.json收集已使用的WemID（已在Mapping中导出的）"""
+    used_ids = set()
+    if not MAPPING_EXPORT_JSON.exists():
+        print(f"[!] 找不到 {MAPPING_EXPORT_JSON}")
+        return used_ids
     try:
-        tree = ET.parse(BANKS_XML)
-        root = tree.getroot()
-        for bank in root.findall(".//root"):
-            bank_filename = bank.get("filename")
-            if not bank_filename:
-                continue
-            for media_header in bank.findall(".//obj[@na='MediaHeader']"):
-                sid_field = media_header.find(".//fld[@na='id']")
-                if sid_field is None:
-                    continue
-                sid_value = sid_field.get("value") or sid_field.get("va")
-                if sid_value is None:
-                    continue
-                try:
-                    media_id = int(sid_value) & 0xFFFFFFFF
-                    if media_id not in media_index:
-                        media_index[media_id] = []
-                    media_index[media_id].append(bank_filename)
-                except ValueError:
-                    continue
+        with open(MAPPING_EXPORT_JSON, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        for entry in data:
+            for src in entry.get('AudioSources', []):
+                wem_id = src.get('WemID')
+                if wem_id is not None:
+                    used_ids.add(int(wem_id) & 0xFFFFFFFF)
     except Exception as e:
-        print(f"[!] 解析banks.xml失败: {e}")
-    return media_index
+        print(f"[!] 解析 {MAPPING_EXPORT_JSON} 失败: {e}")
+    return used_ids
 
 
 def main():
     print("=" * 60)
-    print("从WemResJson构建WEM索引，交叉引用banks.xml和WemResWem")
+    print("从WemResJson构建WEM索引，交叉引用BankRes(WemIDs)、txtp和WemResWem")
     print("=" * 60)
 
     print("[*] 构建索引...")
@@ -107,15 +139,24 @@ def main():
     wem_file_index = build_wem_res_wem_index()
     print(f"    WemResWem文件: {len(wem_file_index)} 个")
 
-    bank_media_index = build_bank_media_index()
-    print(f"    banks.xml: {len(bank_media_index)} media")
+    bank_wem_ids = build_bank_res_wem_ids()
+    print(f"    BankRes引用WemID: {len(bank_wem_ids)} 个")
+
+    txtp_wem_index = build_txtp_wem_index()
+    print(f"    txtp引用WemID: {len(txtp_wem_index)} 个")
+
+    used_wem_ids = build_used_wem_ids()
+    print(f"    sound_wem_mapping_export中已使用: {len(used_wem_ids)} 个")
 
     results = []
     in_wem_dir_count = 0
-    in_banks_count = 0
-    no_bank_count = 0
+    in_bank_res_count = 0
+    in_txtp_count = 0
 
     for wem_id in sorted(wem_json_index.keys()):
+        if wem_id in used_wem_ids:
+            continue
+
         info = wem_json_index[wem_id]
         coord = info['Coord']
         wem_filename = wem_file_index.get(coord, '')
@@ -126,41 +167,40 @@ def main():
             'Coord': coord,
             'JsonFile': info['JsonFile'],
             'IsStreaming': info['IsStreaming'],
-            'WemSize': info['WemSize'],
             'WemFile': wem_filename,
             'WemPath': wem_path,
-            'FoundInBanks': '否',
-            'Banks': '',
-            'BankCount': 0,
+            'FoundInBankRes': '否',
+            'TxtpFiles': '',
         }
 
         if wem_filename:
             in_wem_dir_count += 1
 
-        if wem_id in bank_media_index:
-            banks = bank_media_index[wem_id]
-            result['FoundInBanks'] = '是'
-            result['Banks'] = ';'.join(banks)
-            result['BankCount'] = len(banks)
-            in_banks_count += 1
-        else:
-            no_bank_count += 1
+        if wem_id in bank_wem_ids:
+            result['FoundInBankRes'] = '是'
+            in_bank_res_count += 1
+
+        if wem_id in txtp_wem_index:
+            result['TxtpFiles'] = ';'.join(txtp_wem_index[wem_id])
+            in_txtp_count += 1
 
         results.append(result)
 
     print("=" * 60)
     print("[统计]")
-    print(f"[*] 总WEM数: {len(wem_json_index)}")
+    print(f"[*] 总WEM数(过滤前): {len(wem_json_index)}")
+    print(f"[*] 已在映射中导出(已过滤): {len(used_wem_ids)}")
+    print(f"[*] 过滤后WEM数: {len(results)}")
     print(f"[*] 在WemResWem中有文件: {in_wem_dir_count}")
-    print(f"[*] 在banks.xml中有引用: {in_banks_count}")
-    print(f"[*] 在banks.xml中无引用: {no_bank_count}")
+    print(f"[*] 在BankRes中有引用: {in_bank_res_count}")
+    print(f"[*] 在txtp中有引用: {in_txtp_count}")
     print("=" * 60)
 
     with open(OUTPUT_CSV, 'w', encoding='utf-8', newline='') as f:
         fieldnames = [
-            'WemID', 'Coord', 'JsonFile', 'IsStreaming', 'WemSize',
+            'WemID', 'Coord', 'JsonFile', 'IsStreaming',
             'WemFile', 'WemPath',
-            'FoundInBanks', 'BankCount', 'Banks'
+            'FoundInBankRes', 'TxtpFiles'
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -175,8 +215,10 @@ def main():
             info = [f"Coord({r['Coord']})"]
             if r['WemFile']:
                 info.append("有WemFile")
-            if r['FoundInBanks'] == '是':
-                info.append(f"banks({r['BankCount']})")
+            if r['FoundInBankRes'] == '是':
+                info.append("BankRes有引用")
+            if r['TxtpFiles']:
+                info.append("Txtp有引用")
             info_str = ', '.join(info)
             print(f"  {i+1}. WemID={r['WemID']} -> {info_str}")
         if len(results) > 10:
