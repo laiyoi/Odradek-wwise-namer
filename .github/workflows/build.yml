@@ -21,10 +21,7 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore WemLabeler/WemLabeler.csproj
 
-      - name: Build
-        run: dotnet build WemLabeler/WemLabeler.csproj --configuration Release --no-restore
-
-      - name: Publish (self-contained)
+      - name: Publish
         run: dotnet publish WemLabeler/WemLabeler.csproj --configuration Release --runtime win-x64 --self-contained false -p:PublishSingleFile=true -o publish
 
       - name: Upload artifact

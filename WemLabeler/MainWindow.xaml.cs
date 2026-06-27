@@ -38,13 +38,17 @@ public partial class MainWindow : Window
     private string? _sortPropertyName;
     private bool _sortAscending = true;
     private CancellationTokenSource? _durationCts;
+    private string? _resolvedTxtpPath;
+    private byte[]? _previewWavBytes;
 
     private MenuItem _fileMenuItem = null!;
     private MenuItem _openCsvItem = null!;
     private MenuItem _reloadCsvItem = null!;
     private MenuItem _openWemFolderItem = null!;
+    private MenuItem _openTxtpItem = null!;
     private MenuItem _exportCsvItem = null!;
     private MenuItem _exportWavItem = null!;
+    private MenuItem _exportTxtpItem = null!;
     private MenuItem _vgmstreamItem = null!;
     private MenuItem _exitItem = null!;
     private MenuItem _helpMenuItem = null!;
@@ -77,10 +81,14 @@ public partial class MainWindow : Window
         _reloadCsvItem.Click += (_, _) => ReloadCsv_Click();
         _openWemFolderItem = new MenuItem();
         _openWemFolderItem.Click += (_, _) => OpenWemFolder_Click();
+        _openTxtpItem = new MenuItem();
+        _openTxtpItem.Click += (_, _) => OpenTxtp_Click();
         _exportCsvItem = new MenuItem { InputGestureText = "Ctrl+E" };
         _exportCsvItem.Click += (_, _) => ExportLabels();
         _exportWavItem = new MenuItem { InputGestureText = "Ctrl+W" };
         _exportWavItem.Click += (_, _) => ExportWav();
+        _exportTxtpItem = new MenuItem();
+        _exportTxtpItem.Click += (_, _) => ExportResolvedTxtp();
         _vgmstreamItem = new MenuItem { InputGestureText = "Ctrl+Shift+S" };
         _vgmstreamItem.Click += (_, _) => SetVgmstream_Click();
         _exitItem = new MenuItem();
@@ -89,9 +97,11 @@ public partial class MainWindow : Window
         _fileMenuItem.Items.Add(_openCsvItem);
         _fileMenuItem.Items.Add(_reloadCsvItem);
         _fileMenuItem.Items.Add(_openWemFolderItem);
+        _fileMenuItem.Items.Add(_openTxtpItem);
         _fileMenuItem.Items.Add(new Separator());
         _fileMenuItem.Items.Add(_exportCsvItem);
         _fileMenuItem.Items.Add(_exportWavItem);
+        _fileMenuItem.Items.Add(_exportTxtpItem);
         _fileMenuItem.Items.Add(new Separator());
         _fileMenuItem.Items.Add(_vgmstreamItem);
         _fileMenuItem.Items.Add(new Separator());
@@ -129,8 +139,10 @@ public partial class MainWindow : Window
         _openCsvItem.Header = L("menu_open_csv");
         _reloadCsvItem.Header = L("menu_reload_csv");
         _openWemFolderItem.Header = L("menu_open_wem_folder");
+        _openTxtpItem.Header = L("menu_open_txtp");
         _exportCsvItem.Header = L("menu_export_csv");
         _exportWavItem.Header = L("menu_export_wav");
+        _exportTxtpItem.Header = L("menu_export_txtp");
         _vgmstreamItem.Header = L("menu_vgmstream");
         _exitItem.Header = L("menu_exit");
         _helpMenuItem.Header = L("menu_help");
@@ -344,6 +356,274 @@ public partial class MainWindow : Window
             MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
+    #region Search
+
+    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        ApplySearchFilter();
+        SearchClearButton.IsEnabled = SearchBox.Text.Length > 0;
+    }
+
+    private void SearchBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape) { SearchBox.Text = ""; FileListView.Focus(); e.Handled = true; }
+        if (e.Key == Key.Enter) { FileListView.Focus(); e.Handled = true; }
+    }
+
+    private void SearchClearButton_Click(object sender, RoutedEventArgs e)
+    {
+        SearchBox.Text = "";
+        SearchBox.Focus();
+    }
+
+    private void ApplySearchFilter()
+    {
+        var view = System.Windows.Data.CollectionViewSource.GetDefaultView(_entries);
+        var text = SearchBox.Text.Trim();
+        if (string.IsNullOrEmpty(text))
+        {
+            view.Filter = null;
+        }
+        else
+        {
+            view.Filter = obj => obj is WemEntry entry &&
+                (entry.WemID.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+                 entry.Filename.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+                 (entry.Label?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+        // Auto-select first visible result
+        SelectFirstSearchResult();
+    }
+
+    private void SelectFirstSearchResult()
+    {
+        var view = System.Windows.Data.CollectionViewSource.GetDefaultView(_entries);
+        foreach (WemEntry entry in view)
+        {
+            SelectEntry(_entries.IndexOf(entry));
+            return;
+        }
+    }
+
+    #endregion
+
+    #region Txtp Preview
+
+    private void Window_DragEnter(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            if (files.Length > 0 && files[0].EndsWith(".txtp", StringComparison.OrdinalIgnoreCase))
+                e.Effects = DragDropEffects.Copy;
+            else
+                e.Effects = DragDropEffects.None;
+        }
+        else
+        {
+            e.Effects = DragDropEffects.None;
+        }
+        e.Handled = true;
+    }
+
+    private void Window_Drop(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            if (files.Length > 0 && files[0].EndsWith(".txtp", StringComparison.OrdinalIgnoreCase))
+                OpenTxtpFile(files[0]);
+        }
+        e.Handled = true;
+    }
+
+    private void OpenTxtp_Click() => OpenTxtpFile(null);
+
+    private void OpenTxtpFile(string? path)
+    {
+        if (_entries.Count == 0)
+        {
+            SetStatus(Locale.S("status_txtp_no_csv"));
+            return;
+        }
+        if (path == null)
+        {
+            var initDir = !string.IsNullOrEmpty(_loadedCsvPath)
+                ? Path.GetDirectoryName(_loadedCsvPath)
+                : AppDomain.CurrentDomain.BaseDirectory;
+            var dlg = new OpenFileDialog
+            {
+                Title = Locale.S("dlg_open_txtp"),
+                Filter = Locale.S("filter_txtp"),
+                InitialDirectory = initDir
+            };
+            if (dlg.ShowDialog() != true) return;
+            path = dlg.FileName;
+        }
+        SetStatus(Locale.S("status_txtp_resolving"));
+        var txtpPath = path;
+        Task.Run(() =>
+        {
+            try
+            {
+                var txtpLines = File.ReadAllLines(txtpPath);
+                var resolvedLines = new List<string>();
+                var dir = Path.GetDirectoryName(txtpPath) ?? "";
+                foreach (var line in txtpLines)
+                {
+                    // Preserve leading whitespace
+                    int leadingLen = 0;
+                    while (leadingLen < line.Length && char.IsWhiteSpace(line[leadingLen])) leadingLen++;
+                    var leading = line[..leadingLen];
+                    var trimmed = line[leadingLen..];
+                    if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith('#'))
+                    {
+                        resolvedLines.Add(line);
+                        continue;
+                    }
+                    // Extract first token (the path) from the trimmed line
+                    var firstSpace = trimmed.IndexOf(' ');
+                    var pathToken = firstSpace > 0 ? trimmed[..firstSpace] : trimmed;
+                    var suffix = firstSpace > 0 ? trimmed[firstSpace..] : "";
+                    pathToken = pathToken.Trim('"');
+                    // Extract numeric WemID from path (e.g. "wem/267537974.wem" → "267537974")
+                    var refFile = Path.GetFileName(pathToken);
+                    var numId = Path.GetFileNameWithoutExtension(refFile);
+                    WemEntry? entry = null;
+                    if (!string.IsNullOrEmpty(numId) && numId.All(char.IsAsciiDigit))
+                        entry = _entries.FirstOrDefault(e => e.WemID == numId);
+                    if (entry != null)
+                    {
+                        resolvedLines.Add($"{leading}{entry.Path}{suffix}");
+                    }
+                    else
+                    {
+                        // Try to resolve relative to txtp location
+                        var candidate = Path.Combine(dir, pathToken);
+                        resolvedLines.Add(File.Exists(candidate) ? $"{leading}{candidate}{suffix}" : line);
+                    }
+                }
+                var tempDir = Path.Combine(Path.GetTempPath(), "WemLabeler");
+                Directory.CreateDirectory(tempDir);
+                var outPath = Path.Combine(tempDir, $"resolved_{Guid.NewGuid():N}.txtp");
+                File.WriteAllLines(outPath, resolvedLines, Encoding.UTF8);
+                var fname = Path.GetFileName(txtpPath);
+                Dispatcher.Invoke(() =>
+                {
+                    _resolvedTxtpPath = outPath;
+                    SetStatus(Locale.S("status_txtp_preview", fname));
+                    PlayTxtpResolved();
+                });
+            }
+            catch (Exception ex)
+            {
+                VgmLog($"[OpenTxtp] error: {ex.Message}");
+                Dispatcher.Invoke(() => SetStatus(Locale.S("status_load_fail", ex.Message)));
+            }
+        });
+    }
+
+    private void PlayTxtpResolved()
+    {
+        if (_currentIndex < 0 || _currentIndex >= _entries.Count) return;
+        if (string.IsNullOrEmpty(_resolvedTxtpPath) || !File.Exists(_resolvedTxtpPath)) return;
+        var vgmPath = _config.VgmstreamPath;
+        if (string.IsNullOrEmpty(vgmPath) || !File.Exists(vgmPath)) return;
+        StopPlayback();
+        try
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "WemLabeler");
+            Directory.CreateDirectory(tempDir);
+            var tempWav = Path.Combine(tempDir, $"txtp_preview_{Guid.NewGuid():N}.wav");
+            StatusProgress.Visibility = Visibility.Visible;
+            PlayButton.IsEnabled = false;
+            StopButton.IsEnabled = true;
+            VgmLog("========== txtp decode start ==========");
+            VgmLog($"input: {_resolvedTxtpPath}");
+            var psi = new ProcessStartInfo
+            {
+                FileName = vgmPath,
+                Arguments = $"-o \"{tempWav}\" -i \"{_resolvedTxtpPath}\"",
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true, RedirectStandardError = true
+            };
+            _vgmstreamProcess = Process.Start(psi);
+            if (_vgmstreamProcess == null) { VgmLog("[error] Process.Start returned null"); CleanupPlayback(false); return; }
+            var stdOut = _vgmstreamProcess.StandardOutput.ReadToEndAsync();
+            var stdErr = _vgmstreamProcess.StandardError.ReadToEndAsync();
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await _vgmstreamProcess.WaitForExitAsync();
+                    var outText = await stdOut;
+                    var errText = await stdErr;
+                    _vgmstreamProcess.Dispose();
+                    _vgmstreamProcess = null;
+                    byte[] wavBytes = [];
+                    if (File.Exists(tempWav))
+                    {
+                        var fi = new FileInfo(tempWav);
+                        if (fi.Length > 44) wavBytes = File.ReadAllBytes(tempWav);
+                    }
+                    try { File.Delete(tempWav); } catch { }
+                    var finalBytes = wavBytes;
+                    Dispatcher.Invoke(() =>
+                    {
+                        if (finalBytes.Length > 44)
+                        {
+                            _previewWavBytes = finalBytes;
+                            VgmLog("txtp decode success, playing");
+                            LoadAndPlay(finalBytes);
+                        }
+                        else
+                        {
+                            VgmLog($"[error] txtp decode failed or empty: {errText}");
+                            CleanupPlayback(false);
+                        }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    VgmLog($"[exception] txtp decode: {ex}");
+                    Dispatcher.Invoke(() => CleanupPlayback(false));
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            VgmLog($"[exception] PlayTxtpResolved: {ex}");
+            CleanupPlayback(false);
+        }
+    }
+
+    private void ExportResolvedTxtp()
+    {
+        if (string.IsNullOrEmpty(_resolvedTxtpPath) || !File.Exists(_resolvedTxtpPath))
+        {
+            SetStatus(Locale.S("status_txtp_no_resolved"));
+            return;
+        }
+        var dlg = new SaveFileDialog
+        {
+            Title = Locale.S("dlg_export_txtp"),
+            Filter = Locale.S("filter_txtp"),
+            FileName = "resolved.txtp"
+        };
+        if (dlg.ShowDialog() != true) return;
+        try
+        {
+            File.Copy(_resolvedTxtpPath, dlg.FileName, true);
+            SetStatus(Locale.S("status_txtp_exported", Path.GetFileName(dlg.FileName)));
+        }
+        catch (Exception ex)
+        {
+            SetStatus(Locale.S("status_export_fail", ex.Message));
+        }
+    }
+
+    #endregion
+
     #endregion
 
     #region CSV Loading
@@ -353,6 +633,7 @@ public partial class MainWindow : Window
         _loadCts?.Cancel();
         _loadCts = new CancellationTokenSource();
         var token = _loadCts.Token;
+        _previewWavBytes = null;
         var path = csvPath;
 
         SetBusy(true);
@@ -795,7 +1076,7 @@ public partial class MainWindow : Window
             var targetFmt = new WaveFormat(srcFmt.SampleRate, 16, targetCh);
 
             var allData = new List<byte>();
-            var floatBuf = new float[targetFmt.SampleRate * 2];
+            var floatBuf = new float[targetFmt.SampleRate * targetFmt.Channels];
             var byteBuf = new byte[targetFmt.SampleRate * targetFmt.BlockAlign];
             int samplesRead;
             while ((samplesRead = sp.Read(floatBuf, 0, floatBuf.Length)) > 0)
@@ -1326,6 +1607,28 @@ public partial class MainWindow : Window
 
     private void ExportWavCoord()
     {
+        // If txtp preview WAV is available, export that instead
+        if (_previewWavBytes != null)
+        {
+            var dlg = new SaveFileDialog
+            {
+                Title = Locale.S("dlg_export_txtp_wav"),
+                Filter = "WAV file (*.wav)|*.wav",
+                FileName = "preview.wav"
+            };
+            if (dlg.ShowDialog() != true) return;
+            try
+            {
+                File.WriteAllBytes(dlg.FileName, _previewWavBytes);
+                SetStatus(Locale.S("status_txtp_wav_exported", Path.GetFileName(dlg.FileName)));
+            }
+            catch (Exception ex)
+            {
+                SetStatus(Locale.S("status_export_fail", ex.Message));
+            }
+            return;
+        }
+
         if (_currentIndex < 0 || _currentIndex >= _entries.Count) return;
         var entry = _entries[_currentIndex];
         if (!entry.HasLabel)

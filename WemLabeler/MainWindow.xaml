@@ -7,6 +7,9 @@
         KeyDown="Window_KeyDown"
         PreviewKeyDown="Window_PreviewKeyDown"
         Closing="Window_Closing"
+        AllowDrop="True"
+        DragEnter="Window_DragEnter"
+        Drop="Window_Drop"
         Loaded="Window_Loaded">
 
     <Grid>
@@ -28,8 +31,32 @@
             </Grid.ColumnDefinitions>
 
             <!-- Left: File List -->
-            <ListView x:Name="FileListView"
-                      Grid.Column="0"
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Border Grid.Row="0" Background="#2d2d2d" Padding="4" BorderBrush="#555" BorderThickness="0,0,0,1">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="WemID:" VerticalAlignment="Center"
+                                   Foreground="#CCC" Margin="4,0,6,0" FontSize="12"/>
+                        <TextBox x:Name="SearchBox" Grid.Column="1"
+                                 FontSize="12" Padding="2,1"
+                                 TextChanged="SearchBox_TextChanged"
+                                 KeyDown="SearchBox_KeyDown"/>
+                        <Button x:Name="SearchClearButton" Grid.Column="2"
+                                Content="✕" Width="22" Height="22" Margin="4,0,0,0"
+                                FontSize="11" Click="SearchClearButton_Click"
+                                IsEnabled="False"/>
+                    </Grid>
+                </Border>
+                <ListView x:Name="FileListView"
+                      Grid.Row="1"
                       MouseDoubleClick="FileListView_MouseDoubleClick"
                       SelectionChanged="FileListView_SelectionChanged"
                       GridViewColumnHeader.Click="FileListView_ColumnHeaderClick">
@@ -59,6 +86,7 @@
                     </Style>
                 </ListView.ItemContainerStyle>
             </ListView>
+            </Grid>
 
             <!-- Splitter -->
             <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#CCC"/>
