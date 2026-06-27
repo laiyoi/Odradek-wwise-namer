@@ -15,10 +15,10 @@ WWISE_ID_DIR = BASE_DIR / "WwiseID"
 TXTP_DIR = BASE_DIR / "Extracted_Banks" / "txtp"
 BANKS_XML = BASE_DIR / "Extracted_Banks" / "banks.xml"
 # 从WemResWem读取wem文件（文件名格式: WwiseWemResource_{group}_{index}.wem）
-WEM_RES_WEM_DIR = Path(r"G:\ds2 unpack\wems\WemResWem")
+WEM_RES_WEM_DIR = Path(r"G:\ds2_unpack\wems\WemResWem")
 # 从WemRes读取JSON获取WemID
 WEM_RES_DIR = BASE_DIR / "WemResJson"
-OUTPUT_DIR = Path(r"G:\ds2 unpack\wems\Exported_Audio")
+OUTPUT_DIR = Path(r"G:\ds2_unpack\wems\Exported_Audio")
 VGMSTREAM_CLI = Path(r"D:\下载\odradek\vgmstream-r2083\vgmstream-cli.exe")
 PROGRESS_FILE = BASE_DIR / "export_progress.json"
 STREAMING_CSV = BASE_DIR / "streaming_wem_map.csv"

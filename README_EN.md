@@ -110,7 +110,7 @@ In `export_sounds.py`, you can modify the following configurations:
 BASE_DIR = Path(r"D:\Odradek-wwise-namer")          # Project root directory
 WEM_RES_WEM_DIR = BASE_DIR / "WemResWem"             # Streaming WEM files (exported as .wem)
 WEM_RES_DIR = BASE_DIR / "WemRes"                    # WwiseWemResource JSON files
-OUTPUT_DIR = Path(r"G:\ds2 unpack\wems\Exported_Audio")  # Export directory
+OUTPUT_DIR = Path(r"G:\ds2_unpack\wems\Exported_Audio")  # Export directory
 VGMSTREAM_CLI = Path(r"E:\下载\odradek\vgmstream-r2083\vgmstream-cli.exe")  # vgmstream path
 ```
 

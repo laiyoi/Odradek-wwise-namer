@@ -113,7 +113,7 @@ python link_unused_wem.py
 BASE_DIR = Path(r"D:\Odradek-wwise-namer")          # 项目根目录
 WEM_RES_WEM_DIR = BASE_DIR / "WemResWem"             # Streaming WEM 文件（导出为 .wem）
 WEM_RES_DIR = BASE_DIR / "WemRes"                    # WwiseWemResource JSON 文件
-OUTPUT_DIR = Path(r"G:\ds2 unpack\wems\Exported_Audio")  # 导出目录
+OUTPUT_DIR = Path(r"G:\ds2_unpack\wems\Exported_Audio")  # 导出目录
 VGMSTREAM_CLI = Path(r"E:\下载\odradek\vgmstream-r2083\vgmstream-cli.exe")  # vgmstream 路径
 ```
 

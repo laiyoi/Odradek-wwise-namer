@@ -14,7 +14,7 @@ BASE_DIR = Path(r"E:\Odradek-wwise-namer")
 BANK_RES_DIR = BASE_DIR / "BankRes"
 TXTP_DIR = BASE_DIR / "Extracted_Banks" / "txtp"
 WEM_RES_JSON_DIR = BASE_DIR / "WemResJson"
-WEM_RES_WEM_DIR = Path(r"G:\ds2 unpack\wems\WemResWem")
+WEM_RES_WEM_DIR = Path(r"G:\ds2_unpack\wems\WemResWem")
 OUTPUT_CSV = BASE_DIR / "unused_wem_with_banks.csv"
 MAPPING_EXPORT_JSON = BASE_DIR / "sound_wem_mapping_export.json"
 

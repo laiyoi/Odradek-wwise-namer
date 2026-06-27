@@ -6,7 +6,7 @@ from pathlib import Path
 
 # --- 配置区 ---
 WEM_RES_DIR = Path("./WemResJson")
-WEM_RES_WEM_DIR = Path("G:\ds2 unpack\wems\WemResWem")
+WEM_RES_WEM_DIR = Path("G:\ds2_unpack\wems\WemResWem")
 TXTP_DIR = Path("./Extracted_Banks/txtp")
 VGMSTREAM_CLI = r"E:\下载\odradek\vgmstream-r2083\vgmstream-cli.exe"  
 OUTPUT_DIR = Path("./Decoded_Audio_Split")
