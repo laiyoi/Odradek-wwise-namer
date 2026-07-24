@@ -33,6 +33,8 @@
   "lbl_banks": "Banks: {0}",
   "lbl_wwiseid": "Size: {0}",
 
+  "lbl_channel": "Channels: {0}",
+
   "src_found": "✓ {0} ({1})",
   "src_found_banks": "✓ {0} banks: {1}",
   "src_not_found": "✗ Not found",
@@ -102,6 +104,8 @@
 
   "dlg_open_csv": "Open WEM CSV File",
   "dlg_open_wem_folder": "Select WEM Folder",
+  "dlg_open_wem_json_folder": "Select folder with matching .json files",
+  "dlg_save_csv_for_wem": "Save generated CSV file",
   "dlg_open_txtp": "Select txtp file",
   "dlg_export_csv": "Export Labels",
   "dlg_export_txtp": "Export Resolved txtp",

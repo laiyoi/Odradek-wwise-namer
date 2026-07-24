@@ -72,7 +72,8 @@
                         <GridViewColumn Header="WemID" Width="105" DisplayMemberBinding="{Binding WemID}"/>
                         <GridViewColumn Header="Filename" Width="125" DisplayMemberBinding="{Binding Filename}"/>
                         <GridViewColumn Header="Label" Width="200" DisplayMemberBinding="{Binding DisplayLabel}"/>
-<GridViewColumn Header="Duration" Width="110" DisplayMemberBinding="{Binding DurationDisplay}"/>
+                        <GridViewColumn Header="Duration" Width="110" DisplayMemberBinding="{Binding DurationDisplay}"/>
+                        <GridViewColumn Header="Channels" Width="90" DisplayMemberBinding="{Binding ChannelConfig}"/>
                     </GridView>
                 </ListView.View>
                 <ListView.ItemContainerStyle>
@@ -101,6 +102,7 @@
                             <TextBlock x:Name="InfoFilename" FontWeight="Bold"
                                        TextTrimming="CharacterEllipsis"/>
                             <TextBlock x:Name="InfoWemID" Margin="0,2,0,0"/>
+                            <TextBlock x:Name="InfoChannel" Margin="0,2,0,0"/>
                             <TextBlock x:Name="InfoPath" TextTrimming="CharacterEllipsis"
                                        Foreground="Gray" FontSize="11" Margin="0,2,0,0"/>
                         </StackPanel>

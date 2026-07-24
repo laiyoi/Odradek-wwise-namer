@@ -288,24 +288,33 @@ public partial class MainWindow : Window
 
     private void OpenWemFolder_Click()
     {
-        var folder = PickFolder(Locale.S("dlg_open_wem_folder"));
-        if (folder == null) return;
+        var wemFolder = PickFolder(Locale.S("dlg_open_wem_folder"));
+        if (wemFolder == null) return;
+        var jsonFolder = PickFolder(Locale.S("dlg_open_wem_json_folder"));
+        if (jsonFolder == null) return;
+        // Pick CSV save location
+        var dlg = new SaveFileDialog
+        {
+            Title = Locale.S("dlg_save_csv_for_wem"),
+            Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
+            FileName = $"wem_files_{DateTime.Now:yyyyMMddHHmmss}.csv"
+        };
+        if (dlg.ShowDialog() != true) return;
+        var csvPath = dlg.FileName;
         SetStatus(Locale.S("status_scanning_folder"));
         Task.Run(() =>
         {
             try
             {
-                var files = Directory.GetFiles(folder, "*.wem", SearchOption.AllDirectories);
+                var files = Directory.GetFiles(wemFolder, "*.wem", SearchOption.AllDirectories);
                 if (files.Length == 0)
                 {
                     Dispatcher.Invoke(() => SetStatus(Locale.S("status_folder_empty")));
                     return;
                 }
-                var csvPath = Path.Combine(Path.GetTempPath(), "WemLabeler",
-                    $"folder_{DateTime.Now:yyyyMMddHHmmss}.csv");
                 Directory.CreateDirectory(Path.GetDirectoryName(csvPath)!);
                 using var writer = new StreamWriter(csvPath, false, Encoding.UTF8);
-                writer.WriteLine("WemID,Coord,JsonFile,IsStreaming,WemSize,WemFile,WemPath,FoundInBankRes,TxtpFiles,Label,Duration");
+                writer.WriteLine("WemID,Coord,JsonFile,IsStreaming,WemSize,WemFile,WemPath,FoundInBankRes,TxtpFiles,Label,Duration,Channel");
                 foreach (var wemPath in files)
                 {
                     var fi = new FileInfo(wemPath);
@@ -314,24 +323,65 @@ public partial class MainWindow : Window
                     var m = System.Text.RegularExpressions.Regex.Match(name,
                         @"WwiseWemResource_(\d+)_(\d+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                     string wemId, coord, jsonFile, wemFile;
+                    double duration = -1;
                     if (m.Success)
                     {
                         coord = $"{m.Groups[1].Value}:{m.Groups[2].Value}";
-                        wemId = coord.Replace(":", "");
                         jsonFile = $"WwiseWemResource_{m.Groups[1].Value}_{m.Groups[2].Value}.json";
                         wemFile = $"{name}.wem";
+                        // Try to read JSON to get WemID and duration
+                        var jsonPath = Path.Combine(jsonFolder, jsonFile);
+                        if (File.Exists(jsonPath))
+                        {
+                            try
+                            {
+                                var json = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(jsonPath));
+                                var root = json.RootElement;
+                                if (root.TryGetProperty("WemID", out var wemIdEl))
+                                    wemId = wemIdEl.GetInt64().ToString();
+                                else
+                                    wemId = coord.Replace(":", "");
+                                if (root.TryGetProperty("mLengthInSeconds", out var durEl) && durEl.GetDouble() > 0)
+                                    duration = durEl.GetDouble();
+                            }
+                            catch
+                            {
+                                wemId = coord.Replace(":", "");
+                            }
+                        }
+                        else
+                        {
+                            wemId = coord.Replace(":", "");
+                        }
                     }
                     else
                     {
-                        // Fallback: use file hash as ID, empty other derived fields
+                        // Fallback: use file hash, try JSON by filename
                         wemId = Math.Abs(wemPath.GetHashCode()).ToString();
                         coord = "";
-                        jsonFile = "";
+                        jsonFile = $"{name}.json";
                         wemFile = $"{name}.wem";
+                        var jsonPath = Path.Combine(jsonFolder, jsonFile);
+                        if (File.Exists(jsonPath))
+                        {
+                            try
+                            {
+                                var json = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(jsonPath));
+                                var root = json.RootElement;
+                                if (root.TryGetProperty("WemID", out var wemIdEl))
+                                    wemId = wemIdEl.GetInt64().ToString();
+                                if (root.TryGetProperty("mLengthInSeconds", out var durEl) && durEl.GetDouble() > 0)
+                                    duration = durEl.GetDouble();
+                            }
+                            catch { }
+                        }
                     }
                     var size = fi.Length.ToString();
                     var isStreaming = "False";
-                    writer.WriteLine($"{EscapeCsv(wemId)},{EscapeCsv(coord)},{EscapeCsv(jsonFile)},{EscapeCsv(isStreaming)},{EscapeCsv(size)},{EscapeCsv(wemFile)},{EscapeCsv(wemPath)},,,,");
+                    var durStr = duration >= 0 ? (duration >= 3600
+                        ? $"{(int)(duration / 3600)}:{(int)(duration % 3600 / 60):D2}:{(int)(duration % 60):D2}.{(int)(duration * 1000 % 1000):D3}"
+                        : $"{(int)(duration / 60)}:{(int)(duration % 60):D2}.{(int)(duration * 1000 % 1000):D3}") : "";
+                    writer.WriteLine($"{EscapeCsv(wemId)},{EscapeCsv(coord)},{EscapeCsv(jsonFile)},{EscapeCsv(isStreaming)},{EscapeCsv(size)},{EscapeCsv(wemFile)},{EscapeCsv(wemPath)},,,,{EscapeCsv(durStr)},");
                 }
                 Dispatcher.Invoke(() =>
                 {
@@ -702,6 +752,13 @@ public partial class MainWindow : Window
                             if (d >= 0) entry.DurationSeconds = d;
                         }
                     }
+                    // Read channel from CSV if available
+                    if (colMap.TryGetValue("channel", out int chIdx) && chIdx < parts.Count)
+                    {
+                        var chVal = parts[chIdx];
+                        if (!string.IsNullOrWhiteSpace(chVal))
+                            entry.ChannelConfig = chVal;
+                    }
                     // Preserve all column values so unknown columns aren't lost on write-back
                     foreach (var kv in colMap)
                         if (kv.Value < parts.Count)
@@ -748,6 +805,7 @@ public partial class MainWindow : Window
         InfoFilename.Text = Locale.S("lbl_no_file");
         InfoPath.Text = "";
         InfoWemID.Text = "";
+        InfoChannel.Text = "";
         InfoWemRes.Text = Locale.S("lbl_wemres", "—");
         InfoBanks.Text = Locale.S("lbl_banks", "—");
         InfoWwiseID.Text = "";
@@ -887,6 +945,7 @@ public partial class MainWindow : Window
         InfoFilename.Text = entry.Filename;
         InfoPath.Text = entry.Path;
         InfoWemID.Text = Locale.S("lbl_wemid", entry.WemID + (entry.IsStreaming == "true" ? " [S]" : ""));
+        InfoChannel.Text = Locale.S("lbl_channel", string.IsNullOrEmpty(entry.ChannelConfig) ? "—" : entry.ChannelConfig);
         InfoWemRes.Text = Locale.S("lbl_wemres", entry.CoordSummary);
         InfoBanks.Text = Locale.S("lbl_banks", entry.BankSummary);
         InfoWwiseID.Text = string.IsNullOrEmpty(entry.WemSize) ? "" : Locale.S("lbl_wwiseid", entry.SizeDisplay);
@@ -1063,6 +1122,11 @@ public partial class MainWindow : Window
             using var reader = new WaveFileReader(ms);
             var srcFmt = reader.WaveFormat;
             VgmLog($"NAudio raw format: {srcFmt} (rate={srcFmt.SampleRate}, ch={srcFmt.Channels}, bits={srcFmt.BitsPerSample}, enc={srcFmt.Encoding})");
+
+            if (_currentIndex >= 0 && _currentIndex < _entries.Count)
+            {
+                _entries[_currentIndex].ChannelConfig = WemEntry.GetChannelDisplayName(srcFmt.Channels);
+            }
 
             ISampleProvider sp = reader.ToSampleProvider();
 
@@ -1459,10 +1523,13 @@ public partial class MainWindow : Window
                 h.Equals("Label", StringComparison.OrdinalIgnoreCase));
             var hasDurationInHeader = _originalHeader.Any(h =>
                 h.Equals("Duration", StringComparison.OrdinalIgnoreCase));
+            var hasChannelInHeader = _originalHeader.Any(h =>
+                h.Equals("Channel", StringComparison.OrdinalIgnoreCase));
 
             var headerParts = new List<string>(_originalHeader);
             if (!hasLabelInHeader) headerParts.Add("Label");
             if (!hasDurationInHeader) headerParts.Add("Duration");
+            if (!hasChannelInHeader) headerParts.Add("Channel");
             writer.WriteLine(string.Join(",", headerParts));
 
             foreach (var entry in _entries)
@@ -1474,6 +1541,8 @@ public partial class MainWindow : Window
                     parts.Add(EscapeCsv(entry.Label ?? ""));
                 if (!hasDurationInHeader)
                     parts.Add(EscapeCsv(entry.DurationDisplay));
+                if (!hasChannelInHeader)
+                    parts.Add(EscapeCsv(entry.ChannelConfig));
                 writer.WriteLine(string.Join(",", parts));
             }
         }
@@ -1755,6 +1824,7 @@ public partial class MainWindow : Window
             "banks" => entry.Banks,
             "label" => entry.Label ?? "",
             "duration" => entry.DurationDisplay,
+            "channel" => entry.ChannelConfig,
             _ => entry.ExtraColumns.TryGetValue(colName.Trim().ToLowerInvariant(), out var v) ? v : ""
         };
     }
@@ -1829,6 +1899,17 @@ public partial class MainWindow : Window
                     await proc.WaitForExitAsync();
 
                     if (proc.ExitCode != 0) continue;
+
+                    // Parse channels from "channels: N"
+                    var chMatch = System.Text.RegularExpressions.Regex.Match(output,
+                        @"channels:\s*(\d+)",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (chMatch.Success && int.TryParse(chMatch.Groups[1].Value, System.Globalization.NumberStyles.Any,
+                            System.Globalization.CultureInfo.InvariantCulture, out var channels))
+                    {
+                        var chDisplay = WemEntry.GetChannelDisplayName(channels);
+                        Dispatcher.Invoke(() => entry.ChannelConfig = chDisplay, DispatcherPriority.Background);
+                    }
 
                     // Parse duration from "play duration: N samples (M:S.FFF seconds)"
                     // Try h:mm:ss.fff first, then m:ss.fff

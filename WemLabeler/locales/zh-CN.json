@@ -33,6 +33,8 @@
   "lbl_banks": "Banks: {0}",
   "lbl_wwiseid": "大小: {0}",
 
+  "lbl_channel": "声道: {0}",
+
   "src_found": "✓ {0} ({1})",
   "src_found_banks": "✓ {0}个: {1}",
   "src_not_found": "✗ 未找到",
@@ -102,6 +104,8 @@
 
   "dlg_open_csv": "选择WEM文件CSV",
   "dlg_open_wem_folder": "选择WEM文件夹",
+  "dlg_open_wem_json_folder": "选择包含同名.json文件的文件夹",
+  "dlg_save_csv_for_wem": "保存生成的CSV文件",
   "dlg_open_txtp": "选择txtp文件",
   "dlg_export_csv": "导出标注结果",
   "dlg_export_txtp": "导出解析后txtp",

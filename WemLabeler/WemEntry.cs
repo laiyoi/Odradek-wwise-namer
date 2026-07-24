@@ -6,6 +6,7 @@ public class WemEntry : INotifyPropertyChanged
 {
     private string? _label;
     private double _durationSeconds = -1;
+    private string _channelConfig = "";
 
     public string WemID { get; set; } = "";
     public string Coord { get; set; } = "";
@@ -43,6 +44,31 @@ public class WemEntry : INotifyPropertyChanged
                 return $"{ts.Hours}:{ts.Minutes:D2}:{ts.Seconds:D2}.{ts.Milliseconds:D3}";
             return $"{ts.Minutes}:{ts.Seconds:D2}.{ts.Milliseconds:D3}";
         }
+    }
+
+    public string ChannelConfig
+    {
+        get => _channelConfig;
+        set
+        {
+            if (_channelConfig != value)
+            {
+                _channelConfig = value;
+                OnPropertyChanged(nameof(ChannelConfig));
+            }
+        }
+    }
+
+    public static string GetChannelDisplayName(int channels)
+    {
+        return channels switch
+        {
+            1 => "1ch (Mono)",
+            2 => "2ch (Stereo)",
+            6 => "6ch (5.1)",
+            8 => "8ch (7.1)",
+            _ => $"{channels}ch"
+        };
     }
 
     public string? Label
