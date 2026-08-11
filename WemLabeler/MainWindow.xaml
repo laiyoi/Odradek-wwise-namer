@@ -154,6 +154,8 @@
                                 IsEnabled="False" Margin="4,0,0,0" Click="NextButton_Click"/>
                         <Button x:Name="ExportWavCoordButton" Width="90" Height="30"
                                 IsEnabled="False" Margin="12,0,0,0" Click="ExportWavCoordButton_Click"/>
+                        <Button x:Name="ExportTracksButton" Width="90" Height="30"
+                                IsEnabled="False" Margin="8,0,0,0" Click="ExportTracksButton_Click"/>
                     </StackPanel>
 
                     <!-- Progress -->

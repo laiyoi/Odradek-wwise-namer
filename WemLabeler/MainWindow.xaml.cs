@@ -39,6 +39,9 @@ public partial class MainWindow : Window
     private bool _sortAscending = true;
     private CancellationTokenSource? _durationCts;
     private string? _resolvedTxtpPath;
+    private List<string> _resolvedTxtpLines = new();
+    private string? _txtpBaseName;
+    private int _txtpDecodeGen;
     private byte[]? _previewWavBytes;
 
     private MenuItem _fileMenuItem = null!;
@@ -158,6 +161,7 @@ public partial class MainWindow : Window
         PrevButton.Content = L("btn_prev");
         NextButton.Content = L("btn_next");
         ExportWavCoordButton.Content = L("btn_export_wav_coord");
+        ExportTracksButton.Content = L("btn_export_tracks");
         FileInfoGroup.Header = L("gb_file_info");
         SourceInfoGroup.Header = L("gb_source_info");
 
@@ -558,9 +562,14 @@ public partial class MainWindow : Window
                 var outPath = Path.Combine(tempDir, $"resolved_{Guid.NewGuid():N}.txtp");
                 File.WriteAllLines(outPath, resolvedLines, Encoding.UTF8);
                 var fname = Path.GetFileName(txtpPath);
+                var resolvedLinesCopy = resolvedLines;
+                var baseName = Path.GetFileNameWithoutExtension(fname);
                 Dispatcher.Invoke(() =>
                 {
                     _resolvedTxtpPath = outPath;
+                    _resolvedTxtpLines = resolvedLinesCopy;
+                    _txtpBaseName = baseName;
+                    ExportTracksButton.IsEnabled = true;
                     SetStatus(Locale.S("status_txtp_preview", fname));
                     PlayTxtpResolved();
                 });
@@ -584,42 +593,44 @@ public partial class MainWindow : Window
         {
             var tempDir = Path.Combine(Path.GetTempPath(), "WemLabeler");
             Directory.CreateDirectory(tempDir);
-            var tempWav = Path.Combine(tempDir, $"txtp_preview_{Guid.NewGuid():N}.wav");
             StatusProgress.Visibility = Visibility.Visible;
             PlayButton.IsEnabled = false;
             StopButton.IsEnabled = true;
             VgmLog("========== txtp decode start ==========");
             VgmLog($"input: {_resolvedTxtpPath}");
-            var psi = new ProcessStartInfo
-            {
-                FileName = vgmPath,
-                Arguments = $"-o \"{tempWav}\" -i \"{_resolvedTxtpPath}\"",
-                UseShellExecute = false, CreateNoWindow = true,
-                RedirectStandardOutput = true, RedirectStandardError = true
-            };
-            _vgmstreamProcess = Process.Start(psi);
-            if (_vgmstreamProcess == null) { VgmLog("[error] Process.Start returned null"); CleanupPlayback(false); return; }
-            var stdOut = _vgmstreamProcess.StandardOutput.ReadToEndAsync();
-            var stdErr = _vgmstreamProcess.StandardError.ReadToEndAsync();
+            var txtpPath = _resolvedTxtpPath;
+            var txtpLines = _resolvedTxtpLines;
+            int gen = ++_txtpDecodeGen;
             Task.Run(async () =>
             {
                 try
                 {
-                    await _vgmstreamProcess.WaitForExitAsync();
-                    var outText = await stdOut;
-                    var errText = await stdErr;
-                    _vgmstreamProcess.Dispose();
-                    _vgmstreamProcess = null;
-                    byte[] wavBytes = [];
-                    if (File.Exists(tempWav))
+                    var finalBytes = await DecodeTxtpToWav(txtpPath);
+                    // 解码为全静音时,自动去掉时间/自动化参数(#E #B #b #r #m 等)重新解码预览
+                    if (finalBytes.Length > 44 && IsWavSilent(finalBytes))
                     {
-                        var fi = new FileInfo(tempWav);
-                        if (fi.Length > 44) wavBytes = File.ReadAllBytes(tempWav);
+                        VgmLog("[warn] txtp decode is silent, retrying without time params...");
+                        var rawTxtpPath = Path.Combine(tempDir, $"raw_{Guid.NewGuid():N}.txtp");
+                        File.WriteAllText(rawTxtpPath, BuildRawTxtp(txtpLines), Encoding.UTF8);
+                        var rawBytes = await DecodeTxtpToWav(rawTxtpPath);
+                        try { File.Delete(rawTxtpPath); } catch { }
+                        if (rawBytes.Length > 44 && !IsWavSilent(rawBytes))
+                        {
+                            VgmLog("[warn] fallback succeeded, playing raw decode");
+                            var raw = rawBytes;
+                            Dispatcher.Invoke(() =>
+                            {
+                                if (gen != _txtpDecodeGen) return;
+                                _previewWavBytes = raw;
+                                SetStatus(Locale.S("status_txtp_silent_fallback"));
+                                LoadAndPlay(raw);
+                            });
+                            return;
+                        }
                     }
-                    try { File.Delete(tempWav); } catch { }
-                    var finalBytes = wavBytes;
                     Dispatcher.Invoke(() =>
                     {
+                        if (gen != _txtpDecodeGen) return;
                         if (finalBytes.Length > 44)
                         {
                             _previewWavBytes = finalBytes;
@@ -628,7 +639,7 @@ public partial class MainWindow : Window
                         }
                         else
                         {
-                            VgmLog($"[error] txtp decode failed or empty: {errText}");
+                            VgmLog($"[error] txtp decode failed or empty");
                             CleanupPlayback(false);
                         }
                     });
@@ -645,6 +656,117 @@ public partial class MainWindow : Window
             VgmLog($"[exception] PlayTxtpResolved: {ex}");
             CleanupPlayback(false);
         }
+    }
+
+    // 用 vgmstream 将 txtp 解码为 WAV 字节;失败或文件过小时返回空数组
+    private async Task<byte[]> DecodeTxtpToWav(string txtpPath)
+    {
+        var vgmPath = _config.VgmstreamPath;
+        var tempDir = Path.Combine(Path.GetTempPath(), "WemLabeler");
+        var tempWav = Path.Combine(tempDir, $"txtp_preview_{Guid.NewGuid():N}.wav");
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = vgmPath,
+                Arguments = $"-o \"{tempWav}\" -i \"{txtpPath}\"",
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true, RedirectStandardError = true
+            };
+            using var proc = Process.Start(psi);
+            if (proc == null) return [];
+            var stdOut = proc.StandardOutput.ReadToEndAsync();
+            var stdErr = proc.StandardError.ReadToEndAsync();
+            await proc.WaitForExitAsync();
+            var outText = await stdOut;
+            var errText = await stdErr;
+            if (!string.IsNullOrWhiteSpace(outText)) VgmLog(outText);
+            if (!string.IsNullOrWhiteSpace(errText)) VgmLog(errText);
+            byte[] wavBytes = [];
+            if (File.Exists(tempWav))
+            {
+                var fi = new FileInfo(tempWav);
+                if (fi.Length > 44) wavBytes = File.ReadAllBytes(tempWav);
+            }
+            return wavBytes;
+        }
+        catch (Exception ex)
+        {
+            VgmLog($"[error] DecodeTxtpToWav: {ex.Message}");
+            return [];
+        }
+        finally
+        {
+            try { File.Delete(tempWav); } catch { }
+        }
+    }
+
+    // 判断 WAV 是否全静音(峰值幅度极低)
+    private static bool IsWavSilent(byte[] wavBytes)
+    {
+        try
+        {
+            using var ms = new MemoryStream(wavBytes);
+            using var reader = new WaveFileReader(ms);
+            var fmt = reader.WaveFormat;
+            int bytesPerSample = fmt.BitsPerSample / 8;
+            if (bytesPerSample <= 0) return true;
+            var buf = new byte[fmt.BlockAlign * 4096];
+            long maxAbs = 0;
+            long samples = 0;
+            int read;
+            while ((read = reader.Read(buf, 0, buf.Length)) > 0)
+            {
+                int count = read / bytesPerSample;
+                for (int i = 0; i < count; i++)
+                {
+                    int off = i * bytesPerSample;
+                    if (off + bytesPerSample > read) break;
+                    long v;
+                    if (bytesPerSample == 2) v = Math.Abs((int)(short)(buf[off] | (buf[off + 1] << 8)));
+                    else if (bytesPerSample == 1) v = Math.Abs((int)buf[off] - 128) * 256L;
+                    else v = Math.Abs(BitConverter.ToInt32(buf, off)) / 65536L;
+                    if (v > maxAbs) maxAbs = v;
+                    samples++;
+                }
+            }
+            VgmLog($"[silence-check] samples={samples}, maxAbs={maxAbs}, silent={samples == 0 || maxAbs < 128}");
+            return samples == 0 || maxAbs < 128;
+        }
+        catch (Exception ex)
+        {
+            VgmLog($"[error] IsWavSilent: {ex.Message}");
+            return false;
+        }
+    }
+
+    // 生成去掉时间/自动化参数后的原始 txtp(仅保留路径和 group 行),用于静音回退预览
+    private static string BuildRawTxtp(List<string> resolvedLines)
+    {
+        var sb = new StringBuilder();
+        foreach (var line in resolvedLines)
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith('#'))
+            {
+                sb.AppendLine(line);
+                continue;
+            }
+            if (trimmed.StartsWith("group", StringComparison.OrdinalIgnoreCase))
+            {
+                sb.AppendLine(line);
+                continue;
+            }
+            // 音频行:去掉路径后的所有 # 参数,保留行首缩进
+            int leadingLen = 0;
+            while (leadingLen < line.Length && char.IsWhiteSpace(line[leadingLen])) leadingLen++;
+            var leading = line[..leadingLen];
+            var pathToken = line[leadingLen..];
+            var firstSpace = pathToken.IndexOf(' ');
+            if (firstSpace > 0) pathToken = pathToken[..firstSpace];
+            sb.AppendLine($"{leading}{pathToken}");
+        }
+        return sb.ToString();
     }
 
     private void ExportResolvedTxtp()
@@ -672,6 +794,109 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ExportTxtpTracks()
+    {
+        if (_resolvedTxtpLines.Count == 0)
+        {
+            SetStatus(Locale.S("status_txtp_no_resolved"));
+            return;
+        }
+        var vgmPath = _config.VgmstreamPath;
+        if (string.IsNullOrEmpty(vgmPath) || !File.Exists(vgmPath))
+        {
+            SetStatus(Locale.S("status_vgmstream_not_set"));
+            var result = MessageBox.Show(this, Locale.S("dlg_vgmstream_missing"), Locale.S("dlg_vgmstream_missing_title"),
+                MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (result == MessageBoxResult.Yes) SetVgmstreamPath();
+            return;
+        }
+
+        // 收集可导出的音频行（跳过空行、注释行和 group 行）
+        var sourceLines = new List<string>();
+        foreach (var line in _resolvedTxtpLines)
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith('#')) continue;
+            if (trimmed.StartsWith("group", StringComparison.OrdinalIgnoreCase)) continue;
+            sourceLines.Add(line);
+        }
+        if (sourceLines.Count == 0)
+        {
+            SetStatus(Locale.S("status_txtp_no_sources"));
+            return;
+        }
+
+        var outDir = PickFolder(Locale.S("dlg_export_txtp_tracks_choose"));
+        if (outDir == null) return;
+
+        var baseName = SanitizeFileName(string.IsNullOrEmpty(_txtpBaseName) ? "txtp" : _txtpBaseName);
+        var lines = sourceLines;
+        var tempDir = Path.Combine(Path.GetTempPath(), "WemLabeler");
+        Directory.CreateDirectory(tempDir);
+
+        SetBusy(true);
+        int success = 0, failed = 0;
+        Task.Run(() =>
+        {
+            for (int i = 0; i < lines.Count; i++)
+            {
+                var singleTxtp = Path.Combine(tempDir, $"single_{Guid.NewGuid():N}.txtp");
+                File.WriteAllText(singleTxtp, lines[i] + Environment.NewLine, Encoding.UTF8);
+                var outName = lines.Count > 1 ? $"{baseName}_{i:00}.wav" : $"{baseName}.wav";
+                var outPath = Path.Combine(outDir, outName);
+                if (File.Exists(outPath))
+                {
+                    failed++;
+                    VgmLog($"[export track] SKIP exists: {outName}");
+                    try { File.Delete(singleTxtp); } catch { }
+                    continue;
+                }
+                Dispatcher.Invoke(() => SetStatus(Locale.S("status_export_txtp_tracks", i + 1, lines.Count)));
+                try
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = vgmPath,
+                        Arguments = $"-o \"{outPath}\" -i \"{singleTxtp}\"",
+                        UseShellExecute = false, CreateNoWindow = true,
+                        RedirectStandardOutput = true, RedirectStandardError = true
+                    };
+                    using var proc = Process.Start(psi);
+                    proc?.WaitForExit();
+                    if (proc?.ExitCode == 0 && File.Exists(outPath))
+                    {
+                        success++;
+                        VgmLog($"[export track] OK: {outName}");
+                    }
+                    else
+                    {
+                        failed++;
+                        VgmLog($"[export track] FAIL: exit={proc?.ExitCode}, line={lines[i].Trim()}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    VgmLog($"[export track] EX: {ex.Message}");
+                }
+                finally
+                {
+                    try { File.Delete(singleTxtp); } catch { }
+                }
+            }
+            Dispatcher.Invoke(() =>
+            {
+                SetBusy(false);
+                ExportTracksButton.IsEnabled = true;
+                SetStatus(Locale.S("status_export_wav_done", success, failed));
+                MessageBox.Show(this,
+                    Locale.S("dlg_export_txtp_tracks_ok", outDir, success, failed),
+                    Locale.S("dlg_export_wav_title"),
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            });
+        });
+    }
+
     #endregion
 
     #endregion
@@ -684,6 +909,10 @@ public partial class MainWindow : Window
         _loadCts = new CancellationTokenSource();
         var token = _loadCts.Token;
         _previewWavBytes = null;
+        _resolvedTxtpPath = null;
+        _resolvedTxtpLines.Clear();
+        _txtpBaseName = null;
+        _txtpDecodeGen++;
         var path = csvPath;
 
         SetBusy(true);
@@ -816,6 +1045,7 @@ public partial class MainWindow : Window
         PrevButton.IsEnabled = false;
         NextButton.IsEnabled = false;
         ExportWavCoordButton.IsEnabled = false;
+        ExportTracksButton.IsEnabled = false;
         SaveButton.Content = Locale.S("btn_save");
         ClearWaveform();
     }
@@ -1248,12 +1478,32 @@ public partial class MainWindow : Window
         _samplePosition = startSample;
         _playbackStartTime = DateTime.Now - TimeSpan.FromSeconds((double)startSample / _pcmFormat.SampleRate);
 
-        _wavePlayer = new WasapiOut();
-        _wavePlayer.PlaybackStopped += (_, _) =>
-            Dispatcher.Invoke(() => { StopWavePlayer(); CleanupPlayback(true); });
-        _wavePlayer.Init(stream);
-        _wavePlayer.Play();
-        VgmLog($"WASAPI playing from sample {startSample}");
+        try
+        {
+            // 使用 WaveOutEvent（系统混音器）而非 WasapiOut，兼容性更好，
+            // 避免部分声卡/驱动下 WasapiOut 静默无声的问题
+            _wavePlayer = new WaveOutEvent();
+            _wavePlayer.PlaybackStopped += (_, _) =>
+                Dispatcher.Invoke(() =>
+                {
+                    VgmLog("[playback] stopped");
+                    try { _playbackTimer?.Stop(); } catch { }
+                    try { _wavePlayer?.Dispose(); } catch { }
+                    _wavePlayer = null;
+                    CleanupPlayback(true);
+                });
+            _wavePlayer.Init(stream);
+            _wavePlayer.Play();
+            VgmLog($"WaveOutEvent playing from sample {startSample}");
+        }
+        catch (Exception ex)
+        {
+            VgmLog($"[error] WaveOutEvent init/play failed: {ex.Message}");
+            try { _wavePlayer?.Dispose(); } catch { }
+            _wavePlayer = null;
+            try { _playbackTimer?.Stop(); } catch { }
+            CleanupPlayback(true);
+        }
     }
 
     private void ComputePeaks()
@@ -1673,6 +1923,7 @@ public partial class MainWindow : Window
     }
 
     private void ExportWavCoordButton_Click(object sender, RoutedEventArgs e) => ExportWavCoord();
+    private void ExportTracksButton_Click(object sender, RoutedEventArgs e) => ExportTxtpTracks();
 
     private void ExportWavCoord()
     {
@@ -1972,6 +2223,7 @@ public partial class MainWindow : Window
             PrevButton.IsEnabled = false;
             NextButton.IsEnabled = false;
             ExportWavCoordButton.IsEnabled = false;
+            ExportTracksButton.IsEnabled = false;
         }
         else { Cursor = null; FileListView.IsEnabled = true; }
     }
