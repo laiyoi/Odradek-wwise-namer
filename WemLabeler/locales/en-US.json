@@ -31,9 +31,9 @@
   "btn_export_by_id": "Export by Event ID",
   "btn_clear_log": "Clear Log",
   "btn_extract_banks": "① Extract BNK from BankRes",
-  "btn_build_mapping": "② Build Audio Mapping",
-  "btn_export_audio": "③ Export Audio from Mapping",
-  "btn_build_and_export": "②+③ Build Mapping and Export",
+  "btn_generate_txtp": "② Generate TXTP with wwiser",
+  "btn_build_mapping": "③ Build Audio Mapping",
+  "btn_export_audio": "④ Export Audio from Mapping",
   "btn_unused_wem": "Analyze Unused WEM",
   "btn_rebuild_txtp_index": "Rebuild Txtp Index",
   "lbl_event_ids": "Event ID:",
@@ -98,13 +98,10 @@
   "title": "WEM Labeler - {0} [{1} files]",
   "title_no_file": "WEM Labeler",
 
-  "dlg_welcome": "Welcome to WEM Labeler!\n\nPlease set the path to vgmstream-cli.exe first for audio preview.\n\nSet it now?",
-  "dlg_welcome_title": "First Run",
   "dlg_resume": "Last opened CSV:\n{0}\n\nReload it?",
   "dlg_resume_title": "Resume Session",
   "dlg_unsaved": "Current label is unsaved. Exit anyway?",
   "dlg_unsaved_title": "Confirm Exit",
-  "dlg_vgmstream_missing": "vgmstream-cli.exe is not configured. Set the path now?",
   "dlg_vgmstream_missing_title": "vgmstream Not Configured",
   "dlg_decode_fail": "Decode failed!\n\nFile: {0}\nExit code: {1}\nvgmstream output:\n{2}\n\nFull log in logs/ folder. Open log folder?",
   "dlg_decode_fail_title": "Decode Failed",
@@ -258,5 +255,32 @@
   "dlg_reload_csv_after_tool": "Regenerated:\n{0}\n\nReload this CSV now?",
 
   "about_text": "WEM Labeler v1.5 (WPF)\n\nA tool for labeling missing WEM audio files\nUses vgmstream for real-time audio preview\n\nSupports CSV with WemRes/Banks/WwiseID source info\nConfig file: config.json\nSupports Chinese/English switching\n\nBuilt-in audio pipeline (Tools menu, migrated from the Python scripts):\n  ① Extract BNK from BankRes\n  ② Build audio mapping  ③ Export audio from mapping\n  Export by Event ID / Analyze unused WEMs\n\nShortcuts:\n  ↑ ↓    Prev/Next file (auto-save)\n  Space  Play/Stop audio\n  Ctrl+T Play the txtp owning the current WEM\n  Ctrl+S Save current label\n  Enter  Save when in the label box",
-  "about_title": "About"
+  "about_title": "About",
+  "btn_download_tools": "Download tools (vgmstream + wwiser)",
+  "btn_open_utils": "Utils dir",
+  "lbl_not_found": "(not found)",
+  "dlg_python_missing": "No Python interpreter found.\n\nwwiser is a Python tool: install Python 3, or pick python.exe in the 'Python interpreter' field on the Extract Audio tab.",
+  "status_wwiser_running": "wwiser running... {0}",
+  "pipe_download_target": "[*] Download target: {0}",
+  "pipe_download_vgmstream_ok": "[Done] vgmstream → {0}",
+  "pipe_download_wwiser_ok": "[Done] wwiser → {0}",
+  "pipe_summary_download": "Tools downloaded into {0}",
+  "pipe_wwiser_done": "[Done] Generated {0} .txtp into {1}",
+  "pipe_summary_txtp": "TXTP generation done: {0} .txtp files in {1}",
+
+
+  "status_wwiser_missing": "wwiser.pyz not found: {0}",
+  "dlg_wwiser_missing": "wwiser.pyz was not found.\n\nDownload it into:\n{0}\nnow?",
+
+  "status_vgm_downloading": "Auto-downloading vgmstream ...",
+  "status_vgm_ready": "vgmstream ready: {0}",
+  "status_vgm_download_failed": "vgmstream download failed: {0}",
+  "dlg_vgm_download_failed": "Failed to auto-download vgmstream:\n{0}\n\nYou can also download vgmstream-win64.zip manually and extract it into:\n{1}",
+  "pipe_vgm_auto_download": "[*] vgmstream not found; downloading it into {0} ...",
+  "pipe_vgm_download_failed": "[!] vgmstream download failed: {0}",
+
+  "lbl_not_set": "(not set)",
+  "hint_need_basedir": "The project root is not set yet. Click "Browse..." above and pick the folder you exported resources into with Odradek (the one containing GraphSoundRes / BankRes / WemResJson). The Label Audio tab is unaffected and works as-is.",
+  "status_need_basedir": "Project root is not set; pick the exported-resources folder via "Browse..." on the Extract Audio tab",
+  "status_basedir_suspect": "Set to {0}, but no GraphSoundRes / BankRes / WemResJson / Extracted_Banks found inside; please double-check the folder"
 }

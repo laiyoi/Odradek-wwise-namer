@@ -69,7 +69,14 @@ public sealed class PipelinePaths
 
     private string Combine(string relative) => Path.Combine(BaseDir, relative);
 
-    /// <summary>配置里的路径是否指向一个看起来像项目根目录的位置。</summary>
+    /// <summary>是否设置了项目根目录（目录确实存在）。</summary>
+    public bool HasBaseDir => !string.IsNullOrWhiteSpace(BaseDir) && Directory.Exists(BaseDir);
+
+    /// <summary>
+    /// 配置里的路径是否指向一个看起来像项目根目录的位置。
+    /// 用作「有没有选对文件夹」的判定：真实用户从别处运行 exe 时探测不到，
+    /// 必须靠用户自己指到导出资源的那一层。
+    /// </summary>
     public static bool LooksLikeBaseDir(string? dir)
     {
         if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir)) return false;

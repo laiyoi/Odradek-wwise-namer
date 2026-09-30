@@ -16,10 +16,16 @@ WPF 桌面工具，用于对 [unused_wem_with_banks.csv](../unused_wem_with_bank
 - **播放该 WEM 所属的 txtp**：选中条目后点「播放所属txtp」或按 `Ctrl+T`，自动反查引用该
   WemID 的 txtp 并作为音频播放，**无需手动拖入**；多个 txtp 引用同一 WEM 时弹出选择框。
   原有的拖入 txtp / 「文件 → 打开txtp预览」方式依然保留
-- **提取音频标签页**（由原 Python 脚本迁移而来）：
+- **提取音频标签页**（由原 Python 脚本迁移而来，**排在「标注音频」前面**）：
   路径设置（项目根目录 / 音频导出目录 / Streaming WEM 目录 / txtp 目录 / vgmstream）、
-  BNK 提取、音频映射表构建、按映射表导出音频、按 Event ID 导出、未使用 WEM 分析、
-  txtp 索引重建；所有步骤都在该页内联运行，带实时日志、进度条和取消按钮
+  **一键下载 vgmstream + wwiser**、BNK 提取、
+  **用 wwiser 生成 TXTP**、音频映射表构建、按映射表导出音频、按 Event ID 导出、
+  未使用 WEM 分析、txtp 索引重建；所有步骤都在该页内联运行，带实时日志、进度条和取消按钮
+- **工具位置固定**：vgmstream 与 wwiser 只从 **exe 旁边的 `utils` 目录**里找
+  （`<exe目录>\utils`），不会去别的地方找：
+  - `utils\vgmstream-cli.exe`（或 `utils\<解压出来的子目录>\vgmstream-cli.exe`，会递归找）
+  - `utils\wwiser.pyz`
+  找到后 vgmstream 路径会自动写进配置。
 - **波形可视化**：基于 Canvas 绘制峰值波形，播放时高亮已播放部分，可点击波形跳转（Seek）
 - **多声道下混**：自动将 3~8 声道音频下混为立体声，兼容任意声道数的 WEM 文件
 - **标注管理**：
@@ -205,15 +211,29 @@ dotnet publish WemLabeler/WemLabeler.csproj --configuration Release --runtime wi
 原 `extract_bnk_from_json.py` / `export_sounds.py` / `export_by_id.py` / `link_unused_wem.py`
 的功能已全部迁移进 **「提取音频」标签页**，产物格式与原脚本完全一致（已逐字节 / 逐行校验）：
 
-| 按钮 | 等价脚本 | 产物 |
+| 按钮 | 等价操作 | 产物 |
 | ---- | -------- | ---- |
+| 下载工具 (vgmstream + wwiser) | —（新增） | exe 旁边的 `utils\`：vgmstream（最新 release 的 win64 zip，解压）与 `wwiser.pyz`（最新 release 的单文件 zipapp） |
 | ① 从 BankRes 提取 BNK | `extract_bnk_from_json.py` | `Extracted_Banks/*.bnk` |
-| ② 构建音频映射表 | `export_sounds.py 1` | `sound_wem_mapping_export.json`、`missing_wem_files.csv`、`mapping_build.log` |
-| ③ 按映射表导出音频 | `export_sounds.py 2` | 输出目录下的 `*.wav`、`streaming_wem_map.csv`、`export_progress.json` |
-| ②+③ 构建映射并导出音频 | `export_sounds.py 12` | 以上全部 |
+| ② 用 wwiser 生成 TXTP | 手工开 wwiser 点「Generate TXTP」 | `Extracted_Banks\txtp\*.txtp` |
+| ③ 构建音频映射表 | `export_sounds.py 1` | `sound_wem_mapping_export.json`、`missing_wem_files.csv`、`mapping_build.log` |
+| ④ 按映射表导出音频 | `export_sounds.py 2` | 输出目录下的 `*.wav`、`streaming_wem_map.csv`、`export_progress.json` |
 | 按 Event ID 导出 | `export_by_id.py` | `Decoded_Audio_Split/{event}_{wem}.wav`、`wem_map_cache.json` |
 | 分析未使用的 WEM | `link_unused_wem.py` | `unused_wem_with_banks.csv` |
 | 重建 txtp 索引 | —（新增） | 内存索引，「播放所属txtp」在没有 `TxtpFiles` 列时使用 |
+
+**② 用 wwiser 生成 TXTP** 实际执行的就是命令行：
+
+```
+python <exe目录>\utils\wwiser.pyz -g -go "<Extracted_Banks>\txtp" "<Extracted_Banks>\*.bnk"
+```
+
+`wwiser.pyz` 是 Python zipapp，需要 Python 3 —— 程序直接在 PATH 上找
+`python` / `py` / `python3`，**不需要任何配置**；找不到时会提示装 Python。
+wwiser 的进度输出在 stderr，程序会把 stdout 和 stderr 都实时打到日志区。
+
+> 小提示：把 `wwnames.db3` 和 `wwiser.pyz` 放在同一个目录（即 exe 旁边的 `utils\`），
+> wwiser 就能用上人工整理的名称，生成的 txtp 文件名会更可读。
 
 每个作业都**在本标签页内联执行**：后台线程运行，日志实时刷到下方文本框，
 进度条显示进度，随时可以点「取消」中断，日志可以一键复制。
@@ -224,7 +244,7 @@ dotnet publish WemLabeler/WemLabeler.csproj --configuration Release --runtime wi
 - 音频导出目录
 - Streaming WEM 目录（`.wem` 文件所在处）
 - txtp 目录（默认 `Extracted_Banks\txtp`）
-- vgmstream-cli.exe 路径
+- vgmstream-cli.exe 路径（会自动在 exe 旁边的 utils 里找并回填）
 
 每项后面有「浏览...」和「打开」按钮，最后的「重新探测」会清空手工设置、重新自动探测项目根目录。
 
@@ -236,9 +256,11 @@ dotnet publish WemLabeler/WemLabeler.csproj --configuration Release --runtime wi
 - **窗口会强制前置**：从终端（尤其是最大化的终端 / `dotnet run`）启动时，Windows 不一定会把
   新窗口提到前台，可能完全被终端挡住。程序在窗口渲染完成后会主动 `SetForegroundWindow`，
   保证窗口一定可见。
-- **首次运行会提示配置 vgmstream**：未配置 `vgmstream-cli.exe` 时，启动后会弹出提示
-  （已确保窗口先前置，不会被终端挡住），点「是」即可选择路径。状态栏也会给出提示。
-  需要解码时（播放 / 导出 / 提取音频各步骤）如果仍未配置，会再次提示。
+- **vgmstream 全自动，不再弹配置框**：启动时如果 exe 旁边的 `utils\` 里没有
+  `vgmstream-cli.exe`，程序会**后台自动下载**到那里（状态栏显示下载进度），
+  期间照常用其它功能；播放 / 导出等动作在需要时会等它下载完。
+  只有在下载**失败**时才弹一个错误框说明原因，并提示可以手动放进 `utils\`。
+  想手工指定别的 vgmstream，仍可用 **文件 → 设置 vgmstream 路径**。
 - **崩溃可见**：`WemLabeler` 是 GUI 子系统程序（没有控制台），未处理异常默认会让进程
   静默消失。现在所有未处理异常都会弹框提示并写入 `logs/crash_YYYYMMDD.log`。
 - **临时目录不可写时自动回退**：WPF 会在 `%TEMP%\WPF` 下创建临时文件。如果在受限环境
@@ -247,6 +269,14 @@ dotnet publish WemLabeler/WemLabeler.csproj --configuration Release --runtime wi
   程序启动时会先探测系统临时目录，不可写就自动把 `TEMP`/`TMP` 指向
   `<程序目录>\temp`（不行再退到 `%LOCALAPPDATA%\WemLabeler\temp`），
   并在 `logs/startup_YYYYMMDD.log` 记录这次重定向。
+- **「下载工具」连不上 GitHub**：程序直连，走系统网络设置（路由器上的 fake-ip / 透明代理
+  会被路由器自己转出去，不需要额外配置）。如果确实失败，日志里会给出完整错误链；
+  也可以自己下载后放到 exe 旁边的 `utils\` 下，程序照样认：
+  - vgmstream：下载 `vgmstream-win64.zip` 解压到 `utils\`
+  - wwiser：下载 `wwiser.pyz` 放到 `utils\`
+- **注意**：`utils` 在 exe 旁边（也就是 `WemLabeler\bin\<配置>\net10.0-windows\utils`），
+  属于编译输出目录，`dotnet clean` 或删掉 `bin` 会一起没了；重新编译后需要再跑一次
+  「下载工具」，或者把工具重新拷进去。
 - **启动日志**：`logs/vgmstream_YYYYMMDD.log` 会记录
   `MainWindow ctor: begin/done`、`MainWindow loaded` 等标记，
   可以据此判断程序启动到了哪一步。

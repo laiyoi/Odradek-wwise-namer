@@ -26,6 +26,7 @@ public class AppConfig
 
     /// <summary>按 ID 导出（export_by_id.py）的输出目录。</summary>
     public string? ExportByIdDir { get; set; }
+
 }
 
 public static class ConfigManager

@@ -80,6 +80,7 @@ public partial class MainWindow : Window
         UpdateProgress();
         BuildMenu();
         ApplyLocale();
+        _uiReady = true; // 之后标签页切换事件才可以安全地刷新控件
         RefreshExtractPaths();
         VgmLog("=== MainWindow ctor: done ===");
     }
@@ -170,13 +171,14 @@ public partial class MainWindow : Window
         BtnOpenWemResWemDir.Content = L("btn_open");
         BtnOpenTxtpDir.Content = L("btn_open");
         BtnResetPaths.Content = L("btn_reset_paths");
-
         BtnExtractBanks.Content = L("btn_extract_banks");
+        BtnGenerateTxtp.Content = L("btn_generate_txtp");
         BtnBuildMapping.Content = L("btn_build_mapping");
         BtnExportAudio.Content = L("btn_export_audio");
-        BtnBuildAndExport.Content = L("btn_build_and_export");
         BtnUnusedWem.Content = L("btn_unused_wem");
         BtnRebuildTxtpIndex.Content = L("btn_rebuild_txtp_index");
+        BtnDownloadTools.Content = L("btn_download_tools");
+        BtnOpenUtilsDir.Content = L("btn_open_utils");
         BtnExportById.Content = L("btn_export_by_id");
         EventIdsLabel.Text = L("lbl_event_ids");
         ChkForceWemCache.Content = L("chk_refresh_wem_cache");
@@ -280,20 +282,15 @@ public partial class MainWindow : Window
         }), DispatcherPriority.ContextIdle);
     }
 
-    /// <summary>首启提示：设置 vgmstream 路径 / 恢复上次的 CSV。</summary>
+    /// <summary>首启处理：vgmstream 缺失就自动下载（不弹窗）；必要时提示恢复上次的 CSV。</summary>
     private void RunStartupPrompts()
     {
-        if (string.IsNullOrEmpty(_config.VgmstreamPath))
-        {
-            SetStatus(Locale.S("status_vgmstream_not_set"));
-
-            // 窗口已经前置过了，这条模态链会显示在最前面，不会被终端挡住
-            var result = MessageBox.Show(this,
-                Locale.S("dlg_welcome"),
-                Locale.S("dlg_welcome_title"),
-                MessageBoxButton.YesNo, MessageBoxImage.Information);
-            if (result == MessageBoxResult.Yes) SetVgmstreamPath();
-        }
+        // vgmstream 不再弹「是否设置路径」的对话框：找不到就直接后台自动下载到
+        // exe 旁边的 utils，状态栏会显示进度，期间照常用其它功能。
+        if (ToolLocator.FindVgmstreamCli(_config.VgmstreamPath) == null)
+            _ = EnsureVgmstreamAsync();
+        else
+            RefreshExtractPaths();
 
         if (!string.IsNullOrEmpty(_config.LastCsvPath) && _entries.Count == 0)
         {
@@ -427,7 +424,7 @@ public partial class MainWindow : Window
         if (dlg.ShowDialog() != true) return;
         var csvPath = dlg.FileName;
         SetStatus(Locale.S("status_scanning_folder"));
-        Task.Run(() =>
+        _ = Task.Run(() =>
         {
             try
             {
@@ -645,7 +642,7 @@ public partial class MainWindow : Window
                 csvLookup[e.WemID] = e.Path;
         var repoForResolve = TryEnsureTxtpRepositoryQuiet();
 
-        Task.Run(() =>
+        _ = Task.Run(() =>
         {
             try
             {
@@ -730,7 +727,7 @@ public partial class MainWindow : Window
             var txtpPath = _resolvedTxtpPath;
             var txtpLines = _resolvedTxtpLines;
             int gen = ++_txtpDecodeGen;
-            Task.Run(async () =>
+            _ = Task.Run(async () =>
             {
                 try
                 {
@@ -923,22 +920,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ExportTxtpTracks()
+    private async void ExportTxtpTracks()
     {
         if (_resolvedTxtpLines.Count == 0)
         {
             SetStatus(Locale.S("status_txtp_no_resolved"));
             return;
         }
-        var vgmPath = _config.VgmstreamPath;
-        if (string.IsNullOrEmpty(vgmPath) || !File.Exists(vgmPath))
-        {
-            SetStatus(Locale.S("status_vgmstream_not_set"));
-            var result = MessageBox.Show(this, Locale.S("dlg_vgmstream_missing"), Locale.S("dlg_vgmstream_missing_title"),
-                MessageBoxButton.YesNo, MessageBoxImage.Warning);
-            if (result == MessageBoxResult.Yes) SetVgmstreamPath();
-            return;
-        }
+        var vgmPath = await EnsureVgmstreamAsync();
+        if (vgmPath == null) return;
 
         // 收集可导出的音频行（跳过空行、注释行和 group 行）
         var sourceLines = new List<string>();
@@ -965,7 +955,7 @@ public partial class MainWindow : Window
 
         SetBusy(true);
         int success = 0, failed = 0;
-        Task.Run(() =>
+        _ = Task.Run(() =>
         {
             for (int i = 0; i < lines.Count; i++)
             {
@@ -1050,7 +1040,7 @@ public partial class MainWindow : Window
         _currentIndex = -1;
         ResetDetail();
 
-        Task.Run(() =>
+        _ = Task.Run(() =>
         {
             try
             {
@@ -1355,7 +1345,7 @@ public partial class MainWindow : Window
     private void PlayButton_Click(object sender, RoutedEventArgs e) => PlayCurrent();
     private void StopButton_Click(object sender, RoutedEventArgs e) => StopPlayback();
 
-    private void PlayCurrent()
+    private async void PlayCurrent()
     {
         if (_currentIndex < 0 || _currentIndex >= _entries.Count) return;
 
@@ -1379,15 +1369,8 @@ public partial class MainWindow : Window
             SetStatus(Locale.S("status_file_not_found_short", wemPath));
             return;
         }
-        var vgmPath = _config.VgmstreamPath;
-        if (string.IsNullOrEmpty(vgmPath) || !File.Exists(vgmPath))
-        {
-            SetStatus(Locale.S("status_vgmstream_not_set"));
-            var result = MessageBox.Show(this, Locale.S("dlg_vgmstream_missing"), Locale.S("dlg_vgmstream_missing_title"),
-                MessageBoxButton.YesNo, MessageBoxImage.Warning);
-            if (result == MessageBoxResult.Yes) SetVgmstreamPath();
-            return;
-        }
+        var vgmPath = await EnsureVgmstreamAsync();
+        if (vgmPath == null) return;
         try
         {
             var tempDir = Path.Combine(Path.GetTempPath(), "WemLabeler");
@@ -1418,7 +1401,7 @@ public partial class MainWindow : Window
 
             var stdOut = _vgmstreamProcess.StandardOutput.ReadToEndAsync();
             var stdErr = _vgmstreamProcess.StandardError.ReadToEndAsync();
-            Task.Run(async () =>
+            _ = Task.Run(async () =>
             {
                 try
                 {
@@ -1975,7 +1958,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ExportWav()
+    private async void ExportWav()
     {
         var labeled = _entries.Where(e => e.HasLabel).ToList();
         if (labeled.Count == 0)
@@ -1984,21 +1967,14 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        var vgmPath = _config.VgmstreamPath;
-        if (string.IsNullOrEmpty(vgmPath) || !File.Exists(vgmPath))
-        {
-            SetStatus(Locale.S("status_vgmstream_not_set"));
-            var result = MessageBox.Show(this, Locale.S("dlg_vgmstream_missing"), Locale.S("dlg_vgmstream_missing_title"),
-                MessageBoxButton.YesNo, MessageBoxImage.Warning);
-            if (result == MessageBoxResult.Yes) SetVgmstreamPath();
-            return;
-        }
+        var vgmPath = await EnsureVgmstreamAsync();
+        if (vgmPath == null) return;
         var outDir = PickFolder(Locale.S("dlg_export_wav_choose"));
         if (outDir == null) return;
 
         SetBusy(true);
         int success = 0, failed = 0;
-        Task.Run(() =>
+        _ = Task.Run(() =>
         {
             for (int i = 0; i < labeled.Count; i++)
             {
@@ -2060,7 +2036,7 @@ public partial class MainWindow : Window
     private void ExportWavCoordButton_Click(object sender, RoutedEventArgs e) => ExportWavCoord();
     private void ExportTracksButton_Click(object sender, RoutedEventArgs e) => ExportTxtpTracks();
 
-    private void ExportWavCoord()
+    private async void ExportWavCoord()
     {
         // If txtp preview WAV is available, export that instead
         if (_previewWavBytes != null)
@@ -2092,15 +2068,8 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        var vgmPath = _config.VgmstreamPath;
-        if (string.IsNullOrEmpty(vgmPath) || !File.Exists(vgmPath))
-        {
-            SetStatus(Locale.S("status_vgmstream_not_set"));
-            var result = MessageBox.Show(this, Locale.S("dlg_vgmstream_missing"), Locale.S("dlg_vgmstream_missing_title"),
-                MessageBoxButton.YesNo, MessageBoxImage.Warning);
-            if (result == MessageBoxResult.Yes) SetVgmstreamPath();
-            return;
-        }
+        var vgmPath = await EnsureVgmstreamAsync();
+        if (vgmPath == null) return;
         var wemPath = entry.Path;
         if (!File.Exists(wemPath))
         {
@@ -2124,7 +2093,7 @@ public partial class MainWindow : Window
         }
 
         SetBusy(true);
-        Task.Run(() =>
+        _ = Task.Run(() =>
         {
             try
             {
@@ -2257,7 +2226,7 @@ public partial class MainWindow : Window
         var pending = _entries.Where(e => e.DurationSeconds < 0).ToList();
         if (pending.Count == 0) return;
 
-        Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             for (int i = 0; i < pending.Count; i++)
             {

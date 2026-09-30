@@ -28,7 +28,9 @@ This project utilizes Odradek as a foundation to automate the naming and exporti
 >
 > | WemLabeler menu | Equivalent script |
 > | --------------- | ----------------- |
+> | Extract Audio → Download tools | — (new) | vgmstream + wwiser next to the exe (utils\) |
 > | Extract Audio → ① Extract BNK from BankRes | `extract_bnk_from_json.py` |
+> | Extract Audio → ② Generate TXTP with wwiser | the manual wwiser GUI step |
 > | Extract Audio → ② Build Audio Mapping | `export_sounds.py 1` |
 > | Extract Audio → ③ Export Audio from Mapping | `export_sounds.py 2` |
 > | Extract Audio → ②+③ Build Mapping and Export | `export_sounds.py 12` |
@@ -74,7 +76,10 @@ Use [wwiser](https://github.com/bnnm/wwiser) to read all `.bnk` files in the `Ex
 1. Open wwiser (double-click `wwiser.pyz`)
 2. Click **Load dirs...**, select `d:\Odradek-wwise-namer\Extracted_Banks` directory
 3. Click **Generate TXTP** to generate `.txtp` files
-4. Ensure `.txtp` files are generated in `Extracted_Banks\txtp` directory
+4. Ensure .txtp files are generated in `Extracted_Banks\txtp` directory
+
+> This whole step is automated in WemLabeler: the **② Generate TXTP with wwiser** button runs
+> `python <utils>\wwiser.pyz -g -go "<Extracted_Banks>\txtp" "<Extracted_Banks>\*.bnk"`.
 
 ### Step 4: Run Export Script
 

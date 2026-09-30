@@ -21,6 +21,12 @@ public partial class MainWindow
     private readonly ConcurrentQueue<string> _extractLogQueue = new();
     private DispatcherTimer? _extractFlushTimer;
 
+    /// <summary>XAML 全部加载完成前，标签页切换事件不能去碰控件。</summary>
+    private bool _uiReady;
+
+    /// <summary>vgmstream 自动下载任务（多次请求共用一个）。</summary>
+    private Task<string>? _vgmDownloadTask;
+
     #region 路径解析
 
     /// <summary>解析项目根目录与各子目录；结果缓存，直到路径配置变化。</summary>
@@ -29,10 +35,13 @@ public partial class MainWindow
         if (_paths != null) return _paths;
 
         var detected = PipelinePaths.DetectBaseDir(_config.BaseDir, _loadedCsvPath);
-        var baseDir = detected
-                      ?? (!string.IsNullOrWhiteSpace(_config.BaseDir) ? _config.BaseDir! : AppDomain.CurrentDomain.BaseDirectory);
 
-        // 只在真正探测到项目根目录时回写配置，避免把 exe 目录写进配置
+        // 探测不到就**不要**拿 exe 目录充数：真实用户常常把 exe 放在下载目录里，
+        // 那样只会得到一堆根本不存在的路径（如 C:\下载\WemLabeler\GraphSoundRes）。
+        // 保留已配置的值（可能用户手填过但目录暂时不可用），否则留空并提示用户去选。
+        var baseDir = detected ?? _config.BaseDir ?? string.Empty;
+
+        // 只在真正探测到项目根目录时回写配置
         if (detected != null && !string.Equals(_config.BaseDir, detected, StringComparison.OrdinalIgnoreCase))
         {
             _config.BaseDir = detected;
@@ -41,6 +50,48 @@ public partial class MainWindow
 
         _paths = new PipelinePaths(baseDir, _config);
         return _paths;
+    }
+
+    /// <summary>
+    /// 需要项目根目录的作业在开始前调用：没设置就引导用户选一个。
+    /// 返回 false 表示这次没法继续，调用方直接放弃。
+    /// </summary>
+    private bool EnsureProjectRoot()
+    {
+        var paths = EnsurePaths();
+        if (paths.HasBaseDir && PipelinePaths.LooksLikeBaseDir(paths.BaseDir)) return true;
+
+        SetStatus(Locale.S("status_need_basedir"));
+        ShowProjectRootHint(true);
+
+        // 直接弹出选择框：用户点的就是要用到项目根目录的操作，这里问一次最省事
+        var dir = PickFolder(Locale.S("dlg_set_basedir"));
+        if (dir == null) return false;
+
+        _config.BaseDir = dir;
+        ConfigManager.Save(_config);
+        InvalidatePaths();
+        var refreshed = EnsurePaths();
+        RefreshExtractPaths();
+
+        if (PipelinePaths.LooksLikeBaseDir(refreshed.BaseDir))
+        {
+            ShowProjectRootHint(false);
+            SetStatus(Locale.S("status_basedir_set", refreshed.BaseDir));
+            return true;
+        }
+
+        // 选的目录里没有那几个标志性子目录，提醒一下但允许继续（用户可能结构不常规）
+        ShowProjectRootHint(true);
+        SetStatus(Locale.S("status_basedir_suspect", refreshed.BaseDir));
+        return true;
+    }
+
+    /// <summary>显示/隐藏「请先选择项目根目录」的提示条。</summary>
+    private void ShowProjectRootHint(bool show)
+    {
+        if (ProjectRootHint == null) return;
+        ProjectRootHint.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void InvalidatePaths()
@@ -55,7 +106,9 @@ public partial class MainWindow
     {
         if (!Directory.Exists(paths.TxtpDir))
         {
-            SetStatus(Locale.S("status_txtp_dir_missing", paths.TxtpDir));
+            SetStatus(paths.HasBaseDir
+                ? Locale.S("status_txtp_dir_missing", paths.TxtpDir)
+                : Locale.S("status_need_basedir"));
             return null;
         }
         if (_txtpRepo == null ||
@@ -88,19 +141,97 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>确认 vgmstream 已配置；未配置时询问用户。返回 null 表示无法继续。</summary>
-    private string? EnsureVgmstreamConfigured()
+    /// <summary>
+    /// 确保 vgmstream 可用：exe 旁边的 utils 里有就直接用，没有就**自动下载**，
+    /// 不再弹「未配置，是否设置路径」的对话框。返回 null 表示这次拿不到（下载失败）。
+    /// </summary>
+    private async Task<string?> EnsureVgmstreamAsync()
     {
-        var vgmPath = _config.VgmstreamPath;
-        if (!string.IsNullOrEmpty(vgmPath) && File.Exists(vgmPath)) return vgmPath;
+        var existing = ToolLocator.FindVgmstreamCli(_config.VgmstreamPath);
+        if (existing != null)
+        {
+            if (!string.Equals(_config.VgmstreamPath, existing, StringComparison.OrdinalIgnoreCase))
+            {
+                _config.VgmstreamPath = existing;
+                ConfigManager.Save(_config);
+            }
+            return existing;
+        }
 
-        SetStatus(Locale.S("status_vgmstream_not_set"));
-        var result = MessageBox.Show(this, Locale.S("dlg_vgmstream_missing"), Locale.S("dlg_vgmstream_missing_title"),
-            MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        if (result == MessageBoxResult.Yes) SetVgmstreamPath();
+        _vgmDownloadTask ??= StartVgmstreamDownload();
+        try
+        {
+            await _vgmDownloadTask;
+        }
+        catch (Exception ex)
+        {
+            VgmLog($"[auto] vgmstream 自动下载失败: {ex.Message}");
+            _vgmDownloadTask = null;
+            StatusProgress.Visibility = Visibility.Collapsed;
+            SetStatus(Locale.S("status_vgm_download_failed", ex.Message));
+            MessageBox.Show(this, Locale.S("dlg_vgm_download_failed", ex.Message, ToolLocator.UtilsDir),
+                Locale.S("dlg_error_title"), MessageBoxButton.OK, MessageBoxImage.Error);
+            return null;
+        }
+        finally
+        {
+            StatusProgress.Visibility = Visibility.Collapsed;
+        }
 
-        vgmPath = _config.VgmstreamPath;
-        return !string.IsNullOrEmpty(vgmPath) && File.Exists(vgmPath) ? vgmPath : null;
+        var found = ToolLocator.FindVgmstreamCli();
+        if (found == null)
+        {
+            SetStatus(Locale.S("status_vgm_download_failed", Locale.S("lbl_not_found")));
+            return null;
+        }
+
+        _config.VgmstreamPath = found;
+        ConfigManager.Save(_config);
+        VgmLog($"[auto] vgmstream 就绪: {found}");
+        SetStatus(Locale.S("status_vgm_ready", found));
+        RefreshExtractPaths();
+        return found;
+    }
+
+    /// <summary>流水线作业里用：找到就用，找不到就地下载（日志里有进度），失败返回 null。</summary>
+    private string? EnsureVgmstreamInJob(Action<string>? log)
+    {
+        var existing = ToolLocator.FindVgmstreamCli(_config.VgmstreamPath);
+        if (existing != null) return existing;
+
+        AudioPipeline.SafeLog(log, Locale.S("pipe_vgm_auto_download", ToolLocator.UtilsDir));
+        try
+        {
+            var reporter = new Progress<ToolDownloadProgress>(p => AudioPipeline.SafeLog(log, "  " + p.Message));
+            ToolLocator.DownloadVgmstreamAsync(msg => AudioPipeline.SafeLog(log, "  " + msg), reporter,
+                CancellationToken.None).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            AudioPipeline.SafeLog(log, Locale.S("pipe_vgm_download_failed", ex.Message));
+            return null;
+        }
+
+        var found = ToolLocator.FindVgmstreamCli();
+        if (found != null)
+        {
+            _config.VgmstreamPath = found;
+            ConfigManager.Save(_config);
+            AudioPipeline.SafeLog(log, Locale.S("status_vgm_ready", found));
+        }
+        return found;
+    }
+
+    /// <summary>后台开始下载 vgmstream（exe 旁边的 utils），并在状态栏显示进度。</summary>
+    private Task<string> StartVgmstreamDownload()
+    {
+        SetStatus(Locale.S("status_vgm_downloading"));
+        StatusProgress.Visibility = Visibility.Visible;
+        VgmLog($"[auto] vgmstream 未找到，自动下载到 {ToolLocator.UtilsDir}");
+
+        var reporter = new Progress<ToolDownloadProgress>(p => SetStatus(p.Message));
+        return Task.Run(() => ToolLocator.DownloadVgmstreamAsync(msg => VgmLog("[auto] " + msg), reporter,
+            CancellationToken.None));
     }
 
     private void OpenPathInExplorer(string path)
@@ -184,6 +315,8 @@ public partial class MainWindow
 
     private void MainTabs_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
+        // 构造期间 TabControl 会先选中第一个标签页，此时后面的控件还没创建
+        if (!_uiReady) return;
         if (ReferenceEquals(e.Source, MainTabs) && ReferenceEquals(MainTabs.SelectedItem, ExtractTab))
             RefreshExtractPaths();
     }
@@ -196,11 +329,29 @@ public partial class MainWindow
     private void RefreshExtractPaths()
     {
         var paths = EnsurePaths();
-        PathBaseDirBox.Text = paths.BaseDir;
+        var valid = paths.HasBaseDir && PipelinePaths.LooksLikeBaseDir(paths.BaseDir);
+        PathBaseDirBox.Text = valid ? paths.BaseDir
+            : (paths.HasBaseDir ? paths.BaseDir : Locale.S("lbl_not_set"));
+        ShowProjectRootHint(!valid);
+        if (ProjectRootHintText != null) ProjectRootHintText.Text = Locale.S("hint_need_basedir");
         PathOutputDirBox.Text = paths.OutputDir;
         PathWemResWemDirBox.Text = paths.WemResWemDir;
         PathTxtpDirBox.Text = paths.TxtpDir;
-        PathVgmstreamBox.Text = _config.VgmstreamPath ?? "";
+
+        // vgmstream 只从「exe 旁边的 utils」里找，找到就写回配置
+        var vgm = ToolLocator.FindVgmstreamCli();
+        PathVgmstreamBox.Text = vgm ?? Locale.S("lbl_not_found");
+        if (vgm != null && !string.Equals(_config.VgmstreamPath, vgm, StringComparison.OrdinalIgnoreCase))
+        {
+            _config.VgmstreamPath = vgm;
+            ConfigManager.Save(_config);
+        }
+    }
+
+    private void BtnOpenUtilsDir_Click(object sender, RoutedEventArgs e)
+    {
+        try { Directory.CreateDirectory(ToolLocator.UtilsDir); } catch { }
+        OpenPathInExplorer(ToolLocator.UtilsDir);
     }
 
     private void BtnBrowseBaseDir_Click(object sender, RoutedEventArgs e)
@@ -368,8 +519,8 @@ public partial class MainWindow
         BtnCancelJob.IsEnabled = busy;
         foreach (var button in new[]
                  {
-                     BtnExtractBanks, BtnBuildMapping, BtnExportAudio, BtnBuildAndExport,
-                     BtnUnusedWem, BtnRebuildTxtpIndex, BtnExportById
+                     BtnDownloadTools, BtnExtractBanks, BtnGenerateTxtp, BtnBuildMapping,
+                     BtnExportAudio, BtnUnusedWem, BtnRebuildTxtpIndex, BtnExportById
                  })
         {
             button.IsEnabled = !busy;
@@ -429,6 +580,7 @@ public partial class MainWindow
     private void BtnExtractBanks_Click(object sender, RoutedEventArgs e)
     {
         var paths = EnsurePaths();
+        if (!EnsureProjectRoot()) return;
         StartExtractJob(Locale.S("btn_extract_banks"), (progress, log, ct) =>
         {
             var count = AudioPipeline.ExtractBanks(paths, progress, log, ct);
@@ -436,9 +588,66 @@ public partial class MainWindow
         });
     }
 
+    private void BtnDownloadTools_Click(object sender, RoutedEventArgs e)
+    {
+        StartExtractJob(Locale.S("btn_download_tools"), (progress, log, ct) =>
+        {
+            var reporter = new Progress<ToolDownloadProgress>(p =>
+                progress.Report(new PipelineProgress { Message = p.Message }));
+
+            log(Locale.S("pipe_download_target", ToolLocator.UtilsDir));
+
+            // vgmstream：最新 release 的 Windows 构建（优先 64 位）
+            var vgmDir = ToolLocator.DownloadVgmstreamAsync(log, reporter, ct)
+                .GetAwaiter().GetResult();
+            var vgmExe = ToolLocator.FindVgmstreamCli() ?? vgmDir;
+            log(Locale.S("pipe_download_vgmstream_ok", vgmExe));
+
+            // wwiser：最新 release 的 wwiser.pyz（单文件，命令行可直接跑）
+            var wwiserPyz = ToolLocator.DownloadWwiserAsync(log, reporter, ct)
+                .GetAwaiter().GetResult();
+            log(Locale.S("pipe_download_wwiser_ok", wwiserPyz));
+
+            Dispatcher.Invoke(RefreshExtractPaths);
+            return Locale.S("pipe_summary_download", ToolLocator.UtilsDir);
+        });
+    }
+
+    private void BtnGenerateTxtp_Click(object sender, RoutedEventArgs e)
+    {
+        var paths = EnsurePaths();
+
+        var wwiser = ToolLocator.FindWwiserPyz();
+        if (wwiser == null)
+        {
+            SetStatus(Locale.S("status_wwiser_missing", ToolLocator.UtilsDir));
+            var r = MessageBox.Show(this, Locale.S("dlg_wwiser_missing", ToolLocator.UtilsDir),
+                Locale.S("dlg_vgmstream_missing_title"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (r == MessageBoxResult.Yes) BtnDownloadTools_Click(sender, e);
+            return;
+        }
+
+        // wwiser.pyz 是 Python zipapp，需要解释器；不做 UI 配置，直接在 PATH 上找
+        var python = ToolLocator.FindPython();
+        if (python == null)
+        {
+            MessageBox.Show(this, Locale.S("dlg_python_missing"),
+                Locale.S("dlg_vgmstream_missing_title"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (!EnsureProjectRoot()) return;
+        StartExtractJob(Locale.S("btn_generate_txtp"), (progress, log, ct) =>
+        {
+            var count = WwiserRunner.GenerateTxtp(paths, python, wwiser, progress, log, ct);
+            return Locale.S("pipe_summary_txtp", count, paths.TxtpDir);
+        });
+    }
+
     private void BtnBuildMapping_Click(object sender, RoutedEventArgs e)
     {
         var paths = EnsurePaths();
+        if (!EnsureProjectRoot()) return;
         StartExtractJob(Locale.S("btn_build_mapping"), (progress, log, ct) =>
         {
             var r = AudioPipeline.BuildMapping(paths, progress, log, ct);
@@ -449,35 +658,21 @@ public partial class MainWindow
     private void BtnExportAudio_Click(object sender, RoutedEventArgs e)
     {
         var paths = EnsurePaths();
-        var vgm = EnsureVgmstreamConfigured();
-        if (vgm == null) return;
-
+        if (!EnsureProjectRoot()) return;
         StartExtractJob(Locale.S("btn_export_audio"), (progress, log, ct) =>
         {
+            var vgm = EnsureVgmstreamInJob(log);
+            if (vgm == null) throw new InvalidOperationException(Locale.S("status_vgmstream_not_set"));
+
             var r = AudioPipeline.ExportFromMapping(paths, vgm, progress, log, ct);
             return Locale.S("pipe_summary_export", r.Success.Count, r.Failed.Count, r.Skipped.Count, r.Streaming.Count);
-        });
-    }
-
-    private void BtnBuildAndExport_Click(object sender, RoutedEventArgs e)
-    {
-        var paths = EnsurePaths();
-        var vgm = EnsureVgmstreamConfigured();
-        if (vgm == null) return;
-
-        StartExtractJob(Locale.S("btn_build_and_export"), (progress, log, ct) =>
-        {
-            var mapping = AudioPipeline.BuildMapping(paths, progress, log, ct);
-            log("");
-            var report = AudioPipeline.ExportFromMapping(paths, vgm, progress, log, ct);
-            return Locale.S("pipe_summary_mapping_export",
-                mapping.MappingData.Count, report.Success.Count, report.Failed.Count, report.Skipped.Count);
         });
     }
 
     private void BtnUnusedWem_Click(object sender, RoutedEventArgs e)
     {
         var paths = EnsurePaths();
+        if (!EnsureProjectRoot()) return;
         StartExtractJob(Locale.S("btn_unused_wem"), (progress, log, ct) =>
         {
             var count = AudioPipeline.BuildUnusedWemCsv(paths, progress, log, ct);
@@ -511,6 +706,7 @@ public partial class MainWindow
         if (repo == null) return;
 
         repo.Invalidate();
+        if (!EnsureProjectRoot()) return;
         StartExtractJob(Locale.S("btn_rebuild_txtp_index"), (progress, log, ct) =>
         {
             repo.BuildTxtpIndex(log, ct);
@@ -554,12 +750,13 @@ public partial class MainWindow
             return;
         }
 
-        var vgm = EnsureVgmstreamConfigured();
-        if (vgm == null) return;
-
         var forceRefresh = ChkForceWemCache.IsChecked == true;
+        if (!EnsureProjectRoot()) return;
         StartExtractJob(Locale.S("btn_export_by_id"), (progress, log, ct) =>
         {
+            var vgm = EnsureVgmstreamInJob(log);
+            if (vgm == null) throw new InvalidOperationException(Locale.S("status_vgmstream_not_set"));
+
             var r = AudioPipeline.ExportByIds(paths, vgm, ids, forceRefresh, progress, log, ct);
             return Locale.S("pipe_summary_byid", r.Success.Count, r.Failed.Count, r.NotFoundTxtp.Count);
         });

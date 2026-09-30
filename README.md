@@ -28,7 +28,9 @@
 >
 > | WemLabeler 菜单 | 等价脚本 |
 > | --------------- | -------- |
+> | 提取音频 → 下载工具 | —（新增） | vgmstream + wwiser 下载到 exe 旁边的 utils\ |
 > | 提取音频 → ① 从 BankRes 提取 BNK | `extract_bnk_from_json.py` |
+> | 提取音频 → ② 用 wwiser 生成 TXTP | 原来手工开 wwiser 点 Generate TXTP |
 > | 提取音频 → ② 构建音频映射表 | `export_sounds.py 1` |
 > | 提取音频 → ③ 按映射表导出音频 | `export_sounds.py 2` |
 > | 提取音频 → ②+③ 构建映射并导出音频 | `export_sounds.py 12` |
@@ -76,7 +78,10 @@ python pyscript\extract_bnk_from_json.py
 1. 打开 wwiser（双击 `wwiser.pyz`）
 2. 点击 **Load dirs...**，选择 `d:\Odradek-wwise-namer\Extracted_Banks` 目录
 3. 点击 **Generate TXTP** 生成 `.txtp` 文件
-4. 确保 `.txtp` 文件生成在 `Extracted_Banks\txtp` 目录中
+4. 确保 .txtp 文件生成在 `Extracted_Banks\txtp` 目录中
+
+> 这一步在 WemLabeler 里已自动化：点 **② 用 wwiser 生成 TXTP**，
+> 实际执行 `python <utils>\wwiser.pyz -g -go "<Extracted_Banks>\txtp" "<Extracted_Banks>\*.bnk"`。
 
 ### 步骤 4：运行导出脚本
 

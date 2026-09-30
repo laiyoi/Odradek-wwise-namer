@@ -1,8 +1,8 @@
 <Window x:Class="WemLabeler.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="WEM Labeler" Height="740" Width="1180"
-        MinHeight="520" MinWidth="860"
+        Title="WEM Labeler" Height="760" Width="1200"
+        MinHeight="540" MinWidth="880"
         WindowStartupLocation="CenterScreen"
         KeyDown="Window_KeyDown"
         PreviewKeyDown="Window_PreviewKeyDown"
@@ -22,11 +22,171 @@
         <!-- Menu built in code for i18n -->
         <Menu x:Name="MainMenu" Grid.Row="0"/>
 
-        <!-- 两个并列的标签页，像浏览器/Gradio 一样点击切换 -->
+        <!-- 两个并列的标签页，像浏览器/Gradio 一样点击切换（提取音频在前） -->
         <TabControl x:Name="MainTabs" Grid.Row="1" Margin="4,2,4,0"
                     SelectionChanged="MainTabs_SelectionChanged">
 
-            <!-- ===================== 标签页 1：标注音频 ===================== -->
+            <!-- ===================== 标签页 1：提取音频 ===================== -->
+            <TabItem x:Name="ExtractTab">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- 路径设置（Gradio 风格的输入框） -->
+                    <GroupBox x:Name="PathsGroup" Grid.Row="0" Margin="0,0,0,10">
+                        <Grid Margin="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock x:Name="PathBaseDirLabel" Grid.Row="0" Grid.Column="0"
+                                       VerticalAlignment="Center" Margin="0,0,8,4"/>
+                            <TextBox x:Name="PathBaseDirBox" Grid.Row="0" Grid.Column="1"
+                                     Margin="0,0,6,4" Padding="3,2" IsReadOnly="True"/>
+                            <Button x:Name="BtnBrowseBaseDir" Grid.Row="0" Grid.Column="2"
+                                    Width="76" Margin="0,0,6,4" Click="BtnBrowseBaseDir_Click"/>
+                            <Button x:Name="BtnOpenBaseDir" Grid.Row="0" Grid.Column="3"
+                                    Width="76" Margin="0,0,0,4" Click="BtnOpenBaseDir_Click"/>
+
+                            <TextBlock x:Name="PathOutputDirLabel" Grid.Row="1" Grid.Column="0"
+                                       VerticalAlignment="Center" Margin="0,0,8,4"/>
+                            <TextBox x:Name="PathOutputDirBox" Grid.Row="1" Grid.Column="1"
+                                     Margin="0,0,6,4" Padding="3,2" IsReadOnly="True"/>
+                            <Button x:Name="BtnBrowseOutputDir" Grid.Row="1" Grid.Column="2"
+                                    Width="76" Margin="0,0,6,4" Click="BtnBrowseOutputDir_Click"/>
+                            <Button x:Name="BtnOpenOutputDir" Grid.Row="1" Grid.Column="3"
+                                    Width="76" Margin="0,0,0,4" Click="BtnOpenOutputDir_Click"/>
+
+                            <TextBlock x:Name="PathWemResWemLabel" Grid.Row="2" Grid.Column="0"
+                                       VerticalAlignment="Center" Margin="0,0,8,4"/>
+                            <TextBox x:Name="PathWemResWemDirBox" Grid.Row="2" Grid.Column="1"
+                                     Margin="0,0,6,4" Padding="3,2" IsReadOnly="True"/>
+                            <Button x:Name="BtnBrowseWemResWemDir" Grid.Row="2" Grid.Column="2"
+                                    Width="76" Margin="0,0,6,4" Click="BtnBrowseWemResWemDir_Click"/>
+                            <Button x:Name="BtnOpenWemResWemDir" Grid.Row="2" Grid.Column="3"
+                                    Width="76" Margin="0,0,0,4" Click="BtnOpenWemResWemDir_Click"/>
+
+                            <TextBlock x:Name="PathTxtpDirLabel" Grid.Row="3" Grid.Column="0"
+                                       VerticalAlignment="Center" Margin="0,0,8,4"/>
+                            <TextBox x:Name="PathTxtpDirBox" Grid.Row="3" Grid.Column="1"
+                                     Margin="0,0,6,4" Padding="3,2" IsReadOnly="True"/>
+                            <Button x:Name="BtnBrowseTxtpDir" Grid.Row="3" Grid.Column="2"
+                                    Width="76" Margin="0,0,6,4" Click="BtnBrowseTxtpDir_Click"/>
+                            <Button x:Name="BtnOpenTxtpDir" Grid.Row="3" Grid.Column="3"
+                                    Width="76" Margin="0,0,0,4" Click="BtnOpenTxtpDir_Click"/>
+
+                            <TextBlock x:Name="PathVgmstreamLabel" Grid.Row="4" Grid.Column="0"
+                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBox x:Name="PathVgmstreamBox" Grid.Row="4" Grid.Column="1"
+                                     Margin="0,0,6,0" Padding="3,2" IsReadOnly="True"/>
+                            <Button x:Name="BtnBrowseVgmstream" Grid.Row="4" Grid.Column="2"
+                                    Width="76" Margin="0,0,6,0" Click="BtnBrowseVgmstream_Click"/>
+                            <Button x:Name="BtnResetPaths" Grid.Row="4" Grid.Column="3"
+                                    Width="76" Click="BtnResetPaths_Click"/>
+                        </Grid>
+                    </GroupBox>
+
+                    <!-- 操作按钮 -->
+                    <GroupBox x:Name="ActionsGroup" Grid.Row="1" Margin="0,0,0,10">
+                        <StackPanel Margin="8">
+                            <Border x:Name="ProjectRootHint" Visibility="Collapsed"
+                                    Background="#FFF4CE" BorderBrush="#E0B000" BorderThickness="1"
+                                    Padding="8,6" Margin="0,0,0,8">
+                                <TextBlock x:Name="ProjectRootHintText" TextWrapping="Wrap"/>
+                            </Border>
+                            <WrapPanel>
+                                <Button x:Name="BtnDownloadTools" MinWidth="150" Height="34"
+                                        Margin="0,0,8,8" Click="BtnDownloadTools_Click"/>
+                                <Button x:Name="BtnOpenUtilsDir" MinWidth="110" Height="34"
+                                        Margin="0,0,8,8" Click="BtnOpenUtilsDir_Click"/>
+                                <Button x:Name="BtnExtractBanks" MinWidth="190" Height="34"
+                                        Margin="0,0,8,8" Click="BtnExtractBanks_Click"/>
+                                <Button x:Name="BtnGenerateTxtp" MinWidth="190" Height="34"
+                                        Margin="0,0,8,8" Click="BtnGenerateTxtp_Click"/>
+                                <Button x:Name="BtnBuildMapping" MinWidth="180" Height="34"
+                                        Margin="0,0,8,8" Click="BtnBuildMapping_Click"/>
+                                <Button x:Name="BtnExportAudio" MinWidth="180" Height="34"
+                                        Margin="0,0,8,8" Click="BtnExportAudio_Click"/>
+                                <Button x:Name="BtnUnusedWem" MinWidth="180" Height="34"
+                                        Margin="0,0,8,8" Click="BtnUnusedWem_Click"/>
+                                <Button x:Name="BtnRebuildTxtpIndex" MinWidth="150" Height="34"
+                                        Margin="0,0,8,8" Click="BtnRebuildTxtpIndex_Click"/>
+                            </WrapPanel>
+
+                            <Grid Margin="0,2,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="EventIdsLabel" Grid.Column="0" VerticalAlignment="Center"
+                                           Margin="0,0,8,0"/>
+                                <TextBox x:Name="EventIdsBox" Grid.Column="1" Padding="3,2"
+                                         VerticalContentAlignment="Center"/>
+                                <Button x:Name="BtnExportById" Grid.Column="2" Width="130" Height="30"
+                                        Margin="8,0,0,0" Click="BtnExportById_Click"/>
+                                <CheckBox x:Name="ChkForceWemCache" Grid.Column="3"
+                                          Margin="12,0,0,0" VerticalAlignment="Center"/>
+                            </Grid>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <!-- 输出日志 -->
+                    <GroupBox x:Name="OutputGroup" Grid.Row="2">
+                        <Grid Margin="8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock x:Name="ExtractRunStatus" Grid.Row="0" FontWeight="SemiBold"
+                                       TextWrapping="Wrap" Margin="0,0,0,6"/>
+
+                            <Border Grid.Row="1" BorderBrush="#999" BorderThickness="1">
+                                <TextBox x:Name="ExtractLogBox" IsReadOnly="True" BorderThickness="0"
+                                         FontFamily="Consolas" FontSize="11"
+                                         TextWrapping="NoWrap" AcceptsReturn="True"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Auto"/>
+                            </Border>
+
+                            <Grid Grid.Row="2" Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ProgressBar x:Name="ExtractProgress" Grid.Column="0" Height="18"
+                                             VerticalAlignment="Center" Minimum="0" Maximum="1" Value="0"/>
+                                <Button x:Name="BtnCopyExtractLog" Grid.Column="1" Width="100" Height="28"
+                                        Margin="8,0,0,0" Click="BtnCopyExtractLog_Click"/>
+                                <Button x:Name="BtnClearExtractLog" Grid.Column="2" Width="100" Height="28"
+                                        Margin="8,0,0,0" Click="BtnClearExtractLog_Click"/>
+                                <Button x:Name="BtnCancelJob" Grid.Column="3" Width="100" Height="28"
+                                        Margin="8,0,0,0" IsEnabled="False" Click="BtnCancelJob_Click"/>
+                            </Grid>
+                        </Grid>
+                    </GroupBox>
+                </Grid>
+            </TabItem>
+
+            <!-- ===================== 标签页 2：标注音频 ===================== -->
             <TabItem x:Name="LabelTab">
                 <Grid Margin="6">
                     <Grid.ColumnDefinitions>
@@ -174,157 +334,6 @@
                             </StackPanel>
                         </StackPanel>
                     </ScrollViewer>
-                </Grid>
-            </TabItem>
-
-            <!-- ===================== 标签页 2：提取音频 ===================== -->
-            <TabItem x:Name="ExtractTab">
-                <Grid Margin="10">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <!-- 路径设置（Gradio 风格的输入框） -->
-                    <GroupBox x:Name="PathsGroup" Grid.Row="0" Margin="0,0,0,10">
-                        <Grid Margin="8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-
-                            <TextBlock x:Name="PathBaseDirLabel" Grid.Row="0" Grid.Column="0"
-                                       VerticalAlignment="Center" Margin="0,0,8,4"/>
-                            <TextBox x:Name="PathBaseDirBox" Grid.Row="0" Grid.Column="1"
-                                     Margin="0,0,6,4" Padding="3,2" IsReadOnly="True"/>
-                            <Button x:Name="BtnBrowseBaseDir" Grid.Row="0" Grid.Column="2"
-                                    Width="76" Margin="0,0,6,4" Click="BtnBrowseBaseDir_Click"/>
-                            <Button x:Name="BtnOpenBaseDir" Grid.Row="0" Grid.Column="3"
-                                    Width="76" Margin="0,0,0,4" Click="BtnOpenBaseDir_Click"/>
-
-                            <TextBlock x:Name="PathOutputDirLabel" Grid.Row="1" Grid.Column="0"
-                                       VerticalAlignment="Center" Margin="0,0,8,4"/>
-                            <TextBox x:Name="PathOutputDirBox" Grid.Row="1" Grid.Column="1"
-                                     Margin="0,0,6,4" Padding="3,2" IsReadOnly="True"/>
-                            <Button x:Name="BtnBrowseOutputDir" Grid.Row="1" Grid.Column="2"
-                                    Width="76" Margin="0,0,6,4" Click="BtnBrowseOutputDir_Click"/>
-                            <Button x:Name="BtnOpenOutputDir" Grid.Row="1" Grid.Column="3"
-                                    Width="76" Margin="0,0,0,4" Click="BtnOpenOutputDir_Click"/>
-
-                            <TextBlock x:Name="PathWemResWemLabel" Grid.Row="2" Grid.Column="0"
-                                       VerticalAlignment="Center" Margin="0,0,8,4"/>
-                            <TextBox x:Name="PathWemResWemDirBox" Grid.Row="2" Grid.Column="1"
-                                     Margin="0,0,6,4" Padding="3,2" IsReadOnly="True"/>
-                            <Button x:Name="BtnBrowseWemResWemDir" Grid.Row="2" Grid.Column="2"
-                                    Width="76" Margin="0,0,6,4" Click="BtnBrowseWemResWemDir_Click"/>
-                            <Button x:Name="BtnOpenWemResWemDir" Grid.Row="2" Grid.Column="3"
-                                    Width="76" Margin="0,0,0,4" Click="BtnOpenWemResWemDir_Click"/>
-
-                            <TextBlock x:Name="PathTxtpDirLabel" Grid.Row="3" Grid.Column="0"
-                                       VerticalAlignment="Center" Margin="0,0,8,4"/>
-                            <TextBox x:Name="PathTxtpDirBox" Grid.Row="3" Grid.Column="1"
-                                     Margin="0,0,6,4" Padding="3,2" IsReadOnly="True"/>
-                            <Button x:Name="BtnBrowseTxtpDir" Grid.Row="3" Grid.Column="2"
-                                    Width="76" Margin="0,0,6,4" Click="BtnBrowseTxtpDir_Click"/>
-                            <Button x:Name="BtnOpenTxtpDir" Grid.Row="3" Grid.Column="3"
-                                    Width="76" Margin="0,0,0,4" Click="BtnOpenTxtpDir_Click"/>
-
-                            <TextBlock x:Name="PathVgmstreamLabel" Grid.Row="4" Grid.Column="0"
-                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBox x:Name="PathVgmstreamBox" Grid.Row="4" Grid.Column="1"
-                                     Margin="0,0,6,0" Padding="3,2" IsReadOnly="True"/>
-                            <Button x:Name="BtnBrowseVgmstream" Grid.Row="4" Grid.Column="2"
-                                    Width="76" Margin="0,0,6,0" Click="BtnBrowseVgmstream_Click"/>
-                            <Button x:Name="BtnResetPaths" Grid.Row="4" Grid.Column="3"
-                                    Width="76" Click="BtnResetPaths_Click"/>
-                        </Grid>
-                    </GroupBox>
-
-                    <!-- 操作按钮 -->
-                    <GroupBox x:Name="ActionsGroup" Grid.Row="1" Margin="0,0,0,10">
-                        <StackPanel Margin="8">
-                            <WrapPanel>
-                                <Button x:Name="BtnExtractBanks" MinWidth="200" Height="34"
-                                        Margin="0,0,8,8" Click="BtnExtractBanks_Click"/>
-                                <Button x:Name="BtnBuildMapping" MinWidth="180" Height="34"
-                                        Margin="0,0,8,8" Click="BtnBuildMapping_Click"/>
-                                <Button x:Name="BtnExportAudio" MinWidth="180" Height="34"
-                                        Margin="0,0,8,8" Click="BtnExportAudio_Click"/>
-                                <Button x:Name="BtnBuildAndExport" MinWidth="210" Height="34"
-                                        Margin="0,0,8,8" Click="BtnBuildAndExport_Click"/>
-                                <Button x:Name="BtnUnusedWem" MinWidth="180" Height="34"
-                                        Margin="0,0,8,8" Click="BtnUnusedWem_Click"/>
-                                <Button x:Name="BtnRebuildTxtpIndex" MinWidth="150" Height="34"
-                                        Margin="0,0,8,8" Click="BtnRebuildTxtpIndex_Click"/>
-                            </WrapPanel>
-
-                            <Grid Margin="0,2,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock x:Name="EventIdsLabel" Grid.Column="0" VerticalAlignment="Center"
-                                           Margin="0,0,8,0"/>
-                                <TextBox x:Name="EventIdsBox" Grid.Column="1" Padding="3,2"
-                                         VerticalContentAlignment="Center"/>
-                                <Button x:Name="BtnExportById" Grid.Column="2" Width="130" Height="30"
-                                        Margin="8,0,0,0" Click="BtnExportById_Click"/>
-                                <CheckBox x:Name="ChkForceWemCache" Grid.Column="3"
-                                          Margin="12,0,0,0" VerticalAlignment="Center"/>
-                            </Grid>
-                        </StackPanel>
-                    </GroupBox>
-
-                    <!-- 输出日志 -->
-                    <GroupBox x:Name="OutputGroup" Grid.Row="2">
-                        <Grid Margin="8">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-
-                            <TextBlock x:Name="ExtractRunStatus" Grid.Row="0" FontWeight="SemiBold"
-                                       TextWrapping="Wrap" Margin="0,0,0,6"/>
-
-                            <Border Grid.Row="1" BorderBrush="#999" BorderThickness="1">
-                                <TextBox x:Name="ExtractLogBox" IsReadOnly="True" BorderThickness="0"
-                                         FontFamily="Consolas" FontSize="11"
-                                         TextWrapping="NoWrap" AcceptsReturn="True"
-                                         VerticalScrollBarVisibility="Auto"
-                                         HorizontalScrollBarVisibility="Auto"/>
-                            </Border>
-
-                            <Grid Grid.Row="2" Margin="0,8,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <ProgressBar x:Name="ExtractProgress" Grid.Column="0" Height="18"
-                                             VerticalAlignment="Center" Minimum="0" Maximum="1" Value="0"/>
-                                <Button x:Name="BtnCopyExtractLog" Grid.Column="1" Width="100" Height="28"
-                                        Margin="8,0,0,0" Click="BtnCopyExtractLog_Click"/>
-                                <Button x:Name="BtnClearExtractLog" Grid.Column="2" Width="100" Height="28"
-                                        Margin="8,0,0,0" Click="BtnClearExtractLog_Click"/>
-                                <Button x:Name="BtnCancelJob" Grid.Column="3" Width="100" Height="28"
-                                        Margin="8,0,0,0" IsEnabled="False" Click="BtnCancelJob_Click"/>
-                            </Grid>
-                        </Grid>
-                    </GroupBox>
                 </Grid>
             </TabItem>
         </TabControl>

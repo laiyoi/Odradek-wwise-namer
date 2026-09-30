@@ -31,9 +31,9 @@
   "btn_export_by_id": "按 Event ID 导出",
   "btn_clear_log": "清空日志",
   "btn_extract_banks": "① 从 BankRes 提取 BNK",
-  "btn_build_mapping": "② 构建音频映射表",
-  "btn_export_audio": "③ 按映射表导出音频",
-  "btn_build_and_export": "②+③ 构建映射并导出音频",
+  "btn_generate_txtp": "② 用 wwiser 生成 TXTP",
+  "btn_build_mapping": "③ 构建音频映射表",
+  "btn_export_audio": "④ 按映射表导出音频",
   "btn_unused_wem": "分析未使用的 WEM",
   "btn_rebuild_txtp_index": "重建 txtp 索引",
   "lbl_event_ids": "Event ID:",
@@ -98,13 +98,10 @@
   "title": "WEM Labeler - {0} [{1} 个文件]",
   "title_no_file": "WEM Labeler",
 
-  "dlg_welcome": "欢迎使用 WEM Labeler!\n\n需要先设置 vgmstream-cli.exe 的路径才能预览音频。\n\n是否现在设置?",
-  "dlg_welcome_title": "首次运行",
   "dlg_resume": "上次打开的CSV文件:\n{0}\n\n是否重新加载?",
   "dlg_resume_title": "恢复上次会话",
   "dlg_unsaved": "当前标注尚未保存，确认退出吗?",
   "dlg_unsaved_title": "确认退出",
-  "dlg_vgmstream_missing": "vgmstream-cli.exe 未配置。是否现在设置路径?",
   "dlg_vgmstream_missing_title": "vgmstream未配置",
   "dlg_decode_fail": "解码失败!\n\n文件: {0}\n退出码: {1}\nvgmstream输出:\n{2}\n\n完整日志见 logs/ 目录。是否打开日志目录?",
   "dlg_decode_fail_title": "解码失败",
@@ -258,5 +255,32 @@
   "dlg_reload_csv_after_tool": "已重新生成:\n{0}\n\n是否立即重新加载该 CSV？",
 
   "about_text": "WEM Labeler v1.5 (WPF)\n\n用于标注缺失的WEM音频文件\n使用 vgmstream 进行实时音频预览\n\n支持 CSV 中包含 WemRes/Banks/WwiseID 等来源信息\n配置文件: config.json\n支持中英文切换\n\n内置音频流水线（工具菜单，已从 Python 脚本迁移）:\n  ① 从 BankRes 提取 BNK\n  ② 构建音频映射表 ③ 按映射表导出音频\n  按 Event ID 导出 / 分析未使用的 WEM\n\n操作提示:\n  ↑ ↓    上一个/下一个文件 (自动保存)\n  Space  播放/停止音频\n  Ctrl+T 播放当前 WEM 所属的 txtp\n  Ctrl+S 保存当前标注\n  Enter  在标注框内按则保存",
-  "about_title": "关于"
+  "about_title": "关于",
+  "btn_download_tools": "下载工具 (vgmstream + wwiser)",
+  "btn_open_utils": "工具目录",
+  "lbl_not_found": "(未找到)",
+  "dlg_python_missing": "没有找到 Python 解释器。\n\nwwiser 是 Python 工具，请安装 Python 3，或在「提取音频」页的「Python 解释器」里手动指定 python.exe。",
+  "status_wwiser_running": "wwiser 运行中... {0}",
+  "pipe_download_target": "[*] 下载目标目录: {0}",
+  "pipe_download_vgmstream_ok": "[完成] vgmstream → {0}",
+  "pipe_download_wwiser_ok": "[完成] wwiser → {0}",
+  "pipe_summary_download": "工具下载完成，已放入 {0}",
+  "pipe_wwiser_done": "[完成] 共生成 {0} 个 .txtp 到 {1}",
+  "pipe_summary_txtp": "TXTP 生成完成: {0} 个 .txtp，输出到 {1}",
+
+
+  "status_wwiser_missing": "没有找到 wwiser.pyz: {0}",
+  "dlg_wwiser_missing": "没有找到 wwiser.pyz。\n\n是否现在自动下载到：\n{0}\n？",
+
+  "status_vgm_downloading": "正在自动下载 vgmstream ...",
+  "status_vgm_ready": "vgmstream 已就绪: {0}",
+  "status_vgm_download_failed": "vgmstream 下载失败: {0}",
+  "dlg_vgm_download_failed": "vgmstream 自动下载失败：\n{0}\n\n你也可以手动下载 vgmstream-win64.zip 解压到：\n{1}",
+  "pipe_vgm_auto_download": "[*] vgmstream 未找到，自动下载到 {0} ...",
+  "pipe_vgm_download_failed": "[!] vgmstream 下载失败: {0}",
+
+  "lbl_not_set": "(未设置)",
+  "hint_need_basedir": "还没设置项目根目录。请点上方的「浏览...」选择你用 Odradek 导出资源的那一层文件夹（里面有 GraphSoundRes / BankRes / WemResJson 等）。标注音频那个标签页不受影响，可以直接用。",
+  "status_need_basedir": "还没设置项目根目录，请先在「提取音频」页点「浏览...」选择导出资源的文件夹",
+  "status_basedir_suspect": "已设为 {0}，但里面没找到 GraphSoundRes / BankRes / WemResJson / Extracted_Banks，请确认选对了文件夹"
 }
