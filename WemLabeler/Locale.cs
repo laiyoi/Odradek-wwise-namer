@@ -89,6 +89,10 @@ public static class Locale
             { "btn_prev", "上一个 (←)" },
             { "btn_next", "下一个 (→)" },
             { "status_ready", "就绪" },
+            // 崩溃对话框即使在语言文件缺失时也必须可读
+            { "dlg_fatal_title", "程序发生错误" },
+            { "dlg_fatal", "程序遇到未处理的错误（已尽量继续运行）。\n\n来源: {0}\n类型: {1}\n消息: {2}\n\n崩溃日志: {3}" },
+            { "lbl_unavailable", "(未写入)" },
         };
     }
 
@@ -104,6 +108,9 @@ public static class Locale
             { "btn_prev", "Prev (←)" },
             { "btn_next", "Next (→)" },
             { "status_ready", "Ready" },
+            { "dlg_fatal_title", "Application Error" },
+            { "dlg_fatal", "An unhandled error occurred (the app tried to keep running).\n\nSource: {0}\nType: {1}\nMessage: {2}\n\nCrash log: {3}" },
+            { "lbl_unavailable", "(not written)" },
         };
     }
 }

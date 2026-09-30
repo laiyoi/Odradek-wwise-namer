@@ -17,9 +17,27 @@
 - [Odradek](https://github.com/ShadelessFox/odradek) - 用于导出游戏资源
 - [wwiser](https://github.com/bnnm/wwiser) - 用于解析 Wwise Bank 并生成 TXTP 文件
 - [vgmstream](https://github.com/vgmstream/vgmstream) - 用于将 WEM 转换为 WAV
-- Python 3.x
+- [.NET 10.0 Desktop Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) - 运行 WemLabeler
+- Python 3.x（**可选**：下列脚本的功能已全部迁移进 WemLabeler 的「提取音频」标签页，不再需要 Python）
 
 ## 使用步骤
+
+> **推荐**：步骤 2、4、5 已经全部集成进 **WemLabeler** 的「提取音频」标签页，点击上方标签页即可完成，
+> 不需要安装 Python，也不需要改脚本里的硬编码路径。原 Python 脚本仍然保留在仓库中，
+> 两者读写完全相同的文件格式，可以混用。
+>
+> | WemLabeler 菜单 | 等价脚本 |
+> | --------------- | -------- |
+> | 提取音频 → ① 从 BankRes 提取 BNK | `extract_bnk_from_json.py` |
+> | 提取音频 → ② 构建音频映射表 | `export_sounds.py 1` |
+> | 提取音频 → ③ 按映射表导出音频 | `export_sounds.py 2` |
+> | 提取音频 → ②+③ 构建映射并导出音频 | `export_sounds.py 12` |
+> | 提取音频 → 按 Event ID 导出 | `export_by_id.py` |
+> | 提取音频 → 分析未使用的 WEM | `link_unused_wem.py` |
+>
+> 首次使用请先通过 **提取音频标签页的路径设置** 指定项目根目录、音频导出目录、
+> Streaming WEM 目录和 txtp 目录（多数情况下会自动探测）。
+
 
 ### 步骤 1：使用 Odradek 导出资源
 
@@ -41,7 +59,7 @@
 
 ```bash
 cd d:\Odradek-wwise-namer
-python extract_bnk_from_json.py
+python pyscript\extract_bnk_from_json.py
 ```
 
 此脚本会：
@@ -64,7 +82,7 @@ python extract_bnk_from_json.py
 
 ```bash
 cd d:\Odradek-wwise-namer
-python export_sounds.py
+python pyscript\export_sounds.py
 ```
 
 此脚本会：
@@ -81,7 +99,7 @@ python export_sounds.py
 
 ```bash
 cd d:\Odradek-wwise-namer
-python link_unused_wem.py
+python pyscript\link_unused_wem.py
 ```
 
 此脚本会：
@@ -123,13 +141,13 @@ VGMSTREAM_CLI = Path(r"E:\下载\odradek\vgmstream-r2083\vgmstream-cli.exe")  # 
 
 ```bash
 # 阶段一：仅构建映射表
-python export_sounds.py 1
+python pyscript\export_sounds.py 1
 
 # 阶段二：基于已有映射表导出音频
-python export_sounds.py 2
+python pyscript\export_sounds.py 2
 
 # 先构建映射表，再导出音频（一键完成）
-python export_sounds.py 12
+python pyscript\export_sounds.py 12
 ```
 
 不带参数运行时，脚本会进入**交互式模式**，提示你选择操作。
@@ -161,6 +179,10 @@ dotnet run --project WemLabeler
 此工具提供：
 - 左侧文件列表，支持 CSV 加载与自动保存
 - 实时 WEM 音频预览（通过 vgmstream 解码 + WASAPI 播放）
+- **一键播放该 WEM 所属的 txtp**：选中条目后点「播放所属txtp」或按 `Ctrl+T`，
+  程序会自动反查引用该 WemID 的 txtp 并作为音频播放，**无需手动拖入**；
+  若被多个 txtp 引用会弹出选择框。原有的拖入 / 「打开txtp预览」方式依然保留
+- 内置音频流水线（「提取音频」标签页）：BNK 提取、映射表构建、音频导出、按 ID 导出、未使用 WEM 分析
 - 波形可视化，可点击跳转
 - 批量导出已标注的 WAV 文件（以标注内容为文件名）
 - 中英文界面切换
@@ -181,15 +203,28 @@ Odradek-wwise-namer/
 ├── GraphPgmRes/          # GraphProgramResource JSON 文件
 ├── NodeConstRes/         # NodeConstantsResource JSON 文件
 ├── WwiseID/              # WwiseID JSON 文件
-├── extract_bnk_from_json.py  # BNK 提取脚本
-├── export_sounds.py      # 音频导出主脚本
-├── export_by_id.py       # 按 ID 导出指定音频
-├── build_audio_manifest.py   # 构建音频资源清单
-├── fix_negative_ids.py   # 修复 JSON 中的负数 ID
-├── link_unused_wem.py    # 分析未使用的 WEM 文件来源
-├── WemLabeler/           # WEM 标注工具 (WPF)
+├── pyscript/             # 原 Python 脚本（功能已迁移到 WemLabeler，源码保留）
+│   ├── extract_bnk_from_json.py  # BNK 提取
+│   ├── export_sounds.py          # 音频导出主脚本（阶段一 / 阶段二）
+│   ├── export_by_id.py           # 按 Event ID 导出
+│   ├── link_unused_wem.py        # 分析未使用的 WEM 文件来源
+│   ├── build_audio_manifest.py   # 构建音频资源清单
+│   ├── fix_negative_ids.py       # 修复 JSON 中的负数 ID
+│   └── match.py                  # 按音频内容 MD5 找回原文件名
+├── WemLabeler/           # WEM 标注工具 + 音频流水线 (WPF)
 │   ├── MainWindow.xaml   # 主窗口布局
 │   ├── MainWindow.xaml.cs# 主逻辑（播放、标注、导出）
+│   ├── MainWindow.Extract.cs # 「提取音频」标签页（流水线）与「播放所属txtp」
+│   ├── PipelineWindow.xaml   # 流水线进度/日志窗口
+│   ├── ExportByIdWindow.xaml # 按 Event ID 导出的输入窗口
+│   ├── TxtpPickerWindow.xaml # 多个候选 txtp 时的选择窗口
+│   ├── Pipeline/         # 由 Python 迁移而来的音频流水线
+│   │   ├── AudioPipeline.cs          # BNK 提取 + 各索引构建
+│   │   ├── AudioPipeline.Mapping.cs  # 映射表构建
+│   │   ├── AudioPipeline.Export.cs   # 音频导出 / 按 ID 导出 / 未使用 WEM
+│   │   ├── PipelinePaths.cs          # 目录结构解析与自动探测
+│   │   ├── PipelineModels.cs         # 数据模型
+│   │   └── TxtpRepository.cs         # txtp 索引：WemID → 所属 txtp
 │   ├── WemEntry.cs       # 数据模型
 │   ├── Locale.cs         # 国际化管理
 │   ├── ConfigManager.cs  # 配置读写
@@ -220,16 +255,20 @@ Odradek-wwise-namer/
 | 文件 | 说明 |
 |------|------|
 | `labeled_wem_files.csv` | 标注结果 CSV，包含所有 WEM 文件及其 Label 字段 |
-| `config.json` | 工具配置文件（vgmstream 路径、语言等） |
+| `config.json` | 工具配置文件（vgmstream 路径、项目根目录、输出目录、语言等） |
 | `logs/vgmstream_YYYYMMDD.log` | vgmstream 解码日志 |
+| `wem_map_cache.json` | 「按 Event ID 导出」使用的 WEM 索引缓存 |
 
 ## 注意事项
 
 - 确保所有 JSON 资源文件正确导出，否则脚本可能无法找到对应的引用关系
-- vgmstream 路径需要根据实际情况修改
-- 导出过程可能需要较长时间，脚本支持断点续传（通过 `export_progress.json`）
+- vgmstream 路径需要根据实际情况修改（WemLabeler：**文件 → 设置 vgmstream 路径**）
+- 导出过程可能需要较长时间，支持断点续传（通过 `export_progress.json`）
 - Streaming 类型的 WEM 文件需要在 `WemResWem` 目录中（由 Odradek 导出），文件名格式为 `WwiseWemResource_{group}_{index}.wem`
 - 如果某些 WEM 文件缺失，可以查看 `missing_wem_files.csv` 了解详情
+- WemLabeler 的「提取音频」标签页与 Python 脚本产物完全一致（已逐字节/逐行校验），
+  两者可以交替使用；`unused_wem_with_banks.csv` 会被 WemLabeler 追加
+  `Label,Duration,Channel` 三列，重新生成后这三列会丢失，标注前请留意备份
 
 ## 致谢
 

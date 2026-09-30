@@ -17,9 +17,26 @@ This project utilizes Odradek as a foundation to automate the naming and exporti
 - [Odradek](https://github.com/ShadelessFox/odradek) - For exporting game assets
 - [wwiser](https://github.com/bnnm/wwiser) - For parsing Wwise Banks and generating TXTP files
 - [vgmstream](https://github.com/vgmstream/vgmstream) - For converting WEM to WAV
-- Python 3.x
+- [.NET 10.0 Desktop Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) - To run WemLabeler
+- Python 3.x (**optional**: every script below has been migrated into WemLabeler's Extract Audio tab, so Python is no longer required)
 
 ## Usage Steps
+
+> **Recommended**: steps 2, 4 and 5 are all available from **WemLabeler**'s Extract Audio tab — no Python and
+> no editing hard-coded paths in scripts. The original Python scripts remain in the repository and read
+> and write exactly the same file formats, so the two can be mixed freely.
+>
+> | WemLabeler menu | Equivalent script |
+> | --------------- | ----------------- |
+> | Extract Audio → ① Extract BNK from BankRes | `extract_bnk_from_json.py` |
+> | Extract Audio → ② Build Audio Mapping | `export_sounds.py 1` |
+> | Extract Audio → ③ Export Audio from Mapping | `export_sounds.py 2` |
+> | Extract Audio → ②+③ Build Mapping and Export | `export_sounds.py 12` |
+> | Extract Audio → Export by Event ID | `export_by_id.py` |
+> | Extract Audio → Analyze Unused WEM | `link_unused_wem.py` |
+>
+> On first use set the project root, audio output folder, streaming WEM folder and txtp folder via
+> **Extract Audio** tab's path fields (they are auto-detected in most cases).
 
 ### Step 1: Export Resources with Odradek
 
@@ -41,7 +58,7 @@ Run the Python script to extract Wwise Bank data from JSON:
 
 ```bash
 cd d:\Odradek-wwise-namer
-python extract_bnk_from_json.py
+python pyscript\extract_bnk_from_json.py
 ```
 
 This script will:
@@ -63,7 +80,7 @@ Use [wwiser](https://github.com/bnnm/wwiser) to read all `.bnk` files in the `Ex
 
 ```bash
 cd d:\Odradek-wwise-namer
-python export_sounds.py
+python pyscript\export_sounds.py
 ```
 
 This script will:
@@ -79,7 +96,7 @@ Run the `link_unused_wem.py` script to analyze the origin of unused WEM files:
 
 ```bash
 cd d:\Odradek-wwise-namer
-python link_unused_wem.py
+python pyscript\link_unused_wem.py
 ```
 
 This script will:
@@ -120,13 +137,13 @@ The script supports command line arguments to control processing mode:
 
 ```bash
 # Phase 1: Build mapping only
-python export_sounds.py 1
+python pyscript\export_sounds.py 1
 
 # Phase 2: Export audio based on existing mapping
-python export_sounds.py 2
+python pyscript\export_sounds.py 2
 
 # Build mapping then export audio (one-click complete)
-python export_sounds.py 12
+python pyscript\export_sounds.py 12
 ```
 
 When run without arguments, the script enters **interactive mode** and prompts you to select an operation.
@@ -158,6 +175,13 @@ dotnet run --project WemLabeler
 This tool provides:
 - File list with CSV loading and auto-save
 - Real-time WEM audio preview (vgmstream decode + WASAPI playback)
+- **One-click playback of the txtp that owns a WEM**: select an entry and click
+  "Play owning txtp" (or press `Ctrl+T`); the app reverse-looks-up the txtp referencing that
+  WemID and plays it as audio, with **no manual drag-and-drop required**. If several txtp
+  reference the same WEM a picker appears. The original drag-and-drop and
+  "Open Txtp Preview" routes are still available
+- Built-in audio pipeline (`Extract Audio` tab): BNK extraction, mapping build, audio export,
+  export by event ID, unused WEM analysis
 - Waveform visualization with click-to-seek
 - Batch export of labeled WAV files (using labels as filenames)
 - Chinese / English UI switching
@@ -178,15 +202,28 @@ Odradek-wwise-namer/
 ├── GraphPgmRes/          # GraphProgramResource JSON files
 ├── NodeConstRes/         # NodeConstantsResource JSON files
 ├── WwiseID/              # WwiseID JSON files
-├── extract_bnk_from_json.py  # BNK extraction script
-├── export_sounds.py      # Main audio export script
-├── export_by_id.py       # Export specific audio by ID
-├── build_audio_manifest.py   # Build audio resource manifest
-├── fix_negative_ids.py   # Fix negative IDs in JSON
-├── link_unused_wem.py    # Analyze origin of unused WEM files
-├── WemLabeler/           # WEM Labeling Tool (WPF)
+├── pyscript/             # Original Python scripts (functionality migrated into WemLabeler)
+│   ├── extract_bnk_from_json.py  # BNK extraction
+│   ├── export_sounds.py          # Main audio export script (phase 1 / phase 2)
+│   ├── export_by_id.py           # Export by Event ID
+│   ├── link_unused_wem.py        # Analyze origin of unused WEM files
+│   ├── build_audio_manifest.py   # Build audio resource manifest
+│   ├── fix_negative_ids.py       # Fix negative IDs in JSON
+│   └── match.py                  # Recover original names by audio-content MD5
+├── WemLabeler/           # WEM labeling tool + audio pipeline (WPF)
 │   ├── MainWindow.xaml   # Main window layout
 │   ├── MainWindow.xaml.cs# Main logic (playback, labeling, export)
+│   ├── MainWindow.Extract.cs # Extract Audio tab (pipeline) + "play owning txtp"
+│   ├── PipelineWindow.xaml   # Pipeline progress / log window
+│   ├── ExportByIdWindow.xaml # Input dialog for export by event ID
+│   ├── TxtpPickerWindow.xaml # Chooser when several txtp own one WEM
+│   ├── Pipeline/         # Audio pipeline migrated from the Python scripts
+│   │   ├── AudioPipeline.cs          # BNK extraction + index builders
+│   │   ├── AudioPipeline.Mapping.cs  # Mapping build
+│   │   ├── AudioPipeline.Export.cs   # Audio export / export by ID / unused WEM
+│   │   ├── PipelinePaths.cs          # Directory layout + auto-detection
+│   │   ├── PipelineModels.cs         # Data models
+│   │   └── TxtpRepository.cs         # Txtp index: WemID → owning txtp
 │   ├── WemEntry.cs       # Data model
 │   ├── Locale.cs         # i18n manager
 │   ├── ConfigManager.cs  # Config read/write
@@ -217,16 +254,20 @@ After running the script, the following files will be generated:
 | File | Description |
 |------|-------------|
 | `labeled_wem_files.csv` | Labeled CSV result, containing all WEM files with their Label field |
-| `config.json` | Tool configuration file (vgmstream path, language, etc.) |
+| `config.json` | Tool configuration file (vgmstream path, project root, output folder, language, etc.) |
 | `logs/vgmstream_YYYYMMDD.log` | vgmstream decode logs |
+| `wem_map_cache.json` | WEM index cache used by "Export Audio by Event ID" |
 
 ## Notes
 
 - Ensure all JSON resource files are correctly exported, otherwise scripts may fail to find corresponding references
-- vgmstream path needs to be modified according to your actual setup
+- vgmstream path needs to be modified according to your actual setup (WemLabeler: **File → Set vgmstream Path**)
 - Export process may take a long time, script supports resuming from interruption (via `export_progress.json`)
 - Streaming type WEM files need to exist in `WemResWem` directory (exported by Odradek), filenames follow `WwiseWemResource_{group}_{index}.wem` format
 - If some WEM files are missing, check `missing_wem_files.csv` for details
+- WemLabeler's `Extract Audio` tab produces byte/row-identical output to the Python scripts (verified), so the
+  two can be used interchangeably. `unused_wem_with_banks.csv` gains `Label,Duration,Channel` columns
+  written by WemLabeler; regenerating it drops those columns, so label first and back up if needed
 
 ## Credits
 

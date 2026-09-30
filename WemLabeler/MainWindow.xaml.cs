@@ -10,6 +10,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using NAudio.Wave;
+using WemLabeler.Pipeline;
 
 using Rectangle = System.Windows.Shapes.Rectangle;
 using Line = System.Windows.Shapes.Line;
@@ -44,6 +45,11 @@ public partial class MainWindow : Window
     private int _txtpDecodeGen;
     private byte[]? _previewWavBytes;
 
+    // --- 由 Python 脚本迁移而来的流水线状态 ---
+    private PipelinePaths? _paths;
+    private TxtpRepository? _txtpRepo;
+    private string? _txtpRepoBaseDir;
+
     private MenuItem _fileMenuItem = null!;
     private MenuItem _openCsvItem = null!;
     private MenuItem _reloadCsvItem = null!;
@@ -62,6 +68,7 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        VgmLog("=== MainWindow ctor: begin ===");
         InitializeComponent();
         _config = ConfigManager.Load();
 
@@ -73,6 +80,8 @@ public partial class MainWindow : Window
         UpdateProgress();
         BuildMenu();
         ApplyLocale();
+        RefreshExtractPaths();
+        VgmLog("=== MainWindow ctor: done ===");
     }
 
     private void BuildMenu()
@@ -138,6 +147,43 @@ public partial class MainWindow : Window
 
         Title = L("title_no_file");
 
+        // 两个并列标签页
+        LabelTab.Header = L("tab_label");
+        ExtractTab.Header = L("tab_extract");
+        PathsGroup.Header = L("gb_paths");
+        ActionsGroup.Header = L("gb_actions");
+        OutputGroup.Header = L("gb_output");
+
+        PathBaseDirLabel.Text = L("lbl_path_basedir");
+        PathOutputDirLabel.Text = L("lbl_path_output");
+        PathWemResWemLabel.Text = L("lbl_path_wemreswem");
+        PathTxtpDirLabel.Text = L("lbl_path_txtp");
+        PathVgmstreamLabel.Text = L("lbl_path_vgmstream");
+
+        BtnBrowseBaseDir.Content = L("btn_browse");
+        BtnBrowseOutputDir.Content = L("btn_browse");
+        BtnBrowseWemResWemDir.Content = L("btn_browse");
+        BtnBrowseTxtpDir.Content = L("btn_browse");
+        BtnBrowseVgmstream.Content = L("btn_browse");
+        BtnOpenBaseDir.Content = L("btn_open");
+        BtnOpenOutputDir.Content = L("btn_open");
+        BtnOpenWemResWemDir.Content = L("btn_open");
+        BtnOpenTxtpDir.Content = L("btn_open");
+        BtnResetPaths.Content = L("btn_reset_paths");
+
+        BtnExtractBanks.Content = L("btn_extract_banks");
+        BtnBuildMapping.Content = L("btn_build_mapping");
+        BtnExportAudio.Content = L("btn_export_audio");
+        BtnBuildAndExport.Content = L("btn_build_and_export");
+        BtnUnusedWem.Content = L("btn_unused_wem");
+        BtnRebuildTxtpIndex.Content = L("btn_rebuild_txtp_index");
+        BtnExportById.Content = L("btn_export_by_id");
+        EventIdsLabel.Text = L("lbl_event_ids");
+        ChkForceWemCache.Content = L("chk_refresh_wem_cache");
+        BtnCopyExtractLog.Content = L("btn_copy_log");
+        BtnClearExtractLog.Content = L("btn_clear_log");
+        BtnCancelJob.Content = L("btn_cancel");
+
         _fileMenuItem.Header = L("menu_file");
         _openCsvItem.Header = L("menu_open_csv");
         _reloadCsvItem.Header = L("menu_reload_csv");
@@ -155,6 +201,7 @@ public partial class MainWindow : Window
         _aboutItem.Header = L("menu_about");
 
         PlayButton.Content = L("btn_play");
+        PlayOwnerTxtpButton.Content = L("btn_play_owner_txtp");
         StopButton.Content = L("btn_stop");
         AutoPlayCheck.Content = L("chk_autoplay");
         LabelHint.Text = L("lbl_label");
@@ -170,6 +217,8 @@ public partial class MainWindow : Window
             InfoFilename.Text = L("lbl_no_file");
             SaveButton.Content = L("btn_save");
         }
+        // 未选择文件时也让「来源关联」显示占位符，而不是整块空白
+        RefreshSourceInfo();
 
         if (_suppressLabelEvents || _currentIndex < 0)
             SaveButton.Content = L("btn_save");
@@ -188,16 +237,62 @@ public partial class MainWindow : Window
 
     #region Window Events
 
+    /// <summary>
+    /// 从终端（尤其是最大化的终端）启动时，Windows 不一定会把新窗口提到前台，
+    /// 窗口可能完全被终端挡住，看起来就像「双击了没反应 / 打不开」。
+    /// 这里强制前置一次。
+    /// </summary>
+    private void BringToFront()
+    {
+        try
+        {
+            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            Show();
+            Activate();
+            Topmost = true;
+            Topmost = false;
+
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero) SetForegroundWindow(hwnd);
+            Focus();
+        }
+        catch (Exception ex)
+        {
+            VgmLog($"[warn] BringToFront: {ex.Message}");
+        }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
     private void Window_Loaded(object sender, RoutedEventArgs e)
+    {
+        VgmLog("=== MainWindow loaded ===");
+
+        // 关键：首启对话框必须等窗口真正渲染并前置之后再弹。
+        // 否则从最大化终端启动时，这条模态链（欢迎框 → 选择 vgmstream 的文件对话框）
+        // 会留在终端后面，主窗口被禁用，看起来就像「程序打不开」。
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            BringToFront();
+            VgmLog("=== foreground requested ===");
+            RunStartupPrompts();
+        }), DispatcherPriority.ContextIdle);
+    }
+
+    /// <summary>首启提示：设置 vgmstream 路径 / 恢复上次的 CSV。</summary>
+    private void RunStartupPrompts()
     {
         if (string.IsNullOrEmpty(_config.VgmstreamPath))
         {
+            SetStatus(Locale.S("status_vgmstream_not_set"));
+
+            // 窗口已经前置过了，这条模态链会显示在最前面，不会被终端挡住
             var result = MessageBox.Show(this,
                 Locale.S("dlg_welcome"),
                 Locale.S("dlg_welcome_title"),
                 MessageBoxButton.YesNo, MessageBoxImage.Information);
-            if (result == MessageBoxResult.Yes)
-                SetVgmstreamPath();
+            if (result == MessageBoxResult.Yes) SetVgmstreamPath();
         }
 
         if (!string.IsNullOrEmpty(_config.LastCsvPath) && _entries.Count == 0)
@@ -209,6 +304,8 @@ public partial class MainWindow : Window
             if (answer == MessageBoxResult.Yes)
                 LoadCsvAsync(_config.LastCsvPath);
         }
+
+        BringToFront();
     }
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -217,6 +314,12 @@ public partial class MainWindow : Window
         {
             e.Handled = true;
             SaveCurrentLabel();
+            return;
+        }
+        if (e.KeyboardDevice.Modifiers == ModifierKeys.Control && e.Key == Key.T)
+        {
+            e.Handled = true;
+            PlayOwningTxtp();
             return;
         }
         switch (e.Key)
@@ -241,6 +344,12 @@ public partial class MainWindow : Window
             SaveCurrentLabel();
             return;
         }
+        if (e.KeyboardDevice.Modifiers == ModifierKeys.Control && e.Key == Key.T)
+        {
+            e.Handled = true;
+            PlayOwningTxtp();
+            return;
+        }
         if (e.KeyboardDevice.Modifiers == ModifierKeys.Control) return;
         switch (e.Key)
         {
@@ -257,6 +366,15 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        if (_extractRunning)
+        {
+            var result = MessageBox.Show(this,
+                Locale.S("dlg_job_running"), Locale.S("dlg_unsaved_title"),
+                MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (result != MessageBoxResult.Yes) { e.Cancel = true; return; }
+            try { _extractCts?.Cancel(); } catch { }
+        }
+
         SaveCurrentLabel();
         var hasUnsaved = false;
         if (_currentIndex >= 0 && _currentIndex < _entries.Count)
@@ -275,6 +393,9 @@ public partial class MainWindow : Window
         _config.AutoPlay = AutoPlayCheck.IsChecked == true;
         ConfigManager.Save(_config);
         StopPlayback();
+
+        try { _extractCts?.Cancel(); } catch { }
+        try { _extractFlushTimer?.Stop(); } catch { }
     }
 
     #endregion
@@ -516,6 +637,14 @@ public partial class MainWindow : Window
         }
         SetStatus(Locale.S("status_txtp_resolving"));
         var txtpPath = path;
+
+        // 在 UI 线程上先把解析所需的查找表准备好，后台线程只做纯 IO 解析
+        var csvLookup = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var e in _entries)
+            if (!string.IsNullOrEmpty(e.WemID) && !string.IsNullOrEmpty(e.Path))
+                csvLookup[e.WemID] = e.Path;
+        var repoForResolve = TryEnsureTxtpRepositoryQuiet();
+
         Task.Run(() =>
         {
             try
@@ -543,12 +672,12 @@ public partial class MainWindow : Window
                     // Extract numeric WemID from path (e.g. "wem/267537974.wem" → "267537974")
                     var refFile = Path.GetFileName(pathToken);
                     var numId = Path.GetFileNameWithoutExtension(refFile);
-                    WemEntry? entry = null;
+                    string? resolvedWemPath = null;
                     if (!string.IsNullOrEmpty(numId) && numId.All(char.IsAsciiDigit))
-                        entry = _entries.FirstOrDefault(e => e.WemID == numId);
-                    if (entry != null)
+                        resolvedWemPath = ResolveWemAudioPath(numId, csvLookup, repoForResolve);
+                    if (resolvedWemPath != null)
                     {
-                        resolvedLines.Add($"{leading}{entry.Path}{suffix}");
+                        resolvedLines.Add($"{leading}{resolvedWemPath}{suffix}");
                     }
                     else
                     {
@@ -965,7 +1094,7 @@ public partial class MainWindow : Window
                     TrySet(colMap, parts, "foundinbankres", v => entry.FoundInBanks = v);
                     TrySet(colMap, parts, "bankcount", v => entry.BankCount = v);
                     TrySet(colMap, parts, "banks", v => entry.Banks = v);
-                    TrySet(colMap, parts, "txtpfiles", v => entry.Banks = v);
+                    TrySet(colMap, parts, "txtpfiles", v => entry.TxtpFiles = v);
                     if (hasLabel && colMap.TryGetValue("label", out int lidx) && lidx < parts.Count)
                     {
                         var label = parts[lidx];
@@ -1007,7 +1136,11 @@ public partial class MainWindow : Window
                     SetStatus(Locale.S("status_loaded", _entries.Count, Path.GetFileName(path)));
                     Title = Locale.S("title", Path.GetFileName(path), _entries.Count);
                     if (_entries.Count > 0) SelectEntry(0);
-                    _ = Dispatcher.InvokeAsync(() => StartFetchingDurations(), DispatcherPriority.ApplicationIdle);
+                    _ = Dispatcher.InvokeAsync(() =>
+                    {
+                        StartFetchingDurations();
+                        RefreshExtractPaths();
+                    }, DispatcherPriority.ApplicationIdle);
                 });
             }
             catch (OperationCanceledException) { }
@@ -1037,6 +1170,7 @@ public partial class MainWindow : Window
         InfoChannel.Text = "";
         InfoWemRes.Text = Locale.S("lbl_wemres", "—");
         InfoBanks.Text = Locale.S("lbl_banks", "—");
+        InfoTxtp.Text = Locale.S("lbl_txtp", "—");
         InfoWwiseID.Text = "";
         LabelTextBox.Text = "";
         LabelTextBox.IsEnabled = false;
@@ -1046,6 +1180,7 @@ public partial class MainWindow : Window
         NextButton.IsEnabled = false;
         ExportWavCoordButton.IsEnabled = false;
         ExportTracksButton.IsEnabled = false;
+        PlayOwnerTxtpButton.IsEnabled = false;
         SaveButton.Content = Locale.S("btn_save");
         ClearWaveform();
     }
@@ -1176,15 +1311,15 @@ public partial class MainWindow : Window
         InfoPath.Text = entry.Path;
         InfoWemID.Text = Locale.S("lbl_wemid", entry.WemID + (entry.IsStreaming == "true" ? " [S]" : ""));
         InfoChannel.Text = Locale.S("lbl_channel", string.IsNullOrEmpty(entry.ChannelConfig) ? "—" : entry.ChannelConfig);
-        InfoWemRes.Text = Locale.S("lbl_wemres", entry.CoordSummary);
-        InfoBanks.Text = Locale.S("lbl_banks", entry.BankSummary);
-        InfoWwiseID.Text = string.IsNullOrEmpty(entry.WemSize) ? "" : Locale.S("lbl_wwiseid", entry.SizeDisplay);
+        // 「来源关联」的 WemRes / Banks / Txtp / 大小 由 RefreshSourceInfo 统一渲染
+        RefreshSourceInfo();
 
         LabelTextBox.Text = entry.Label ?? "";
         LabelTextBox.IsEnabled = true;
         SaveButton.IsEnabled = true;
         SaveButton.Content = Locale.S("btn_save");
         PlayButton.IsEnabled = true;
+        PlayOwnerTxtpButton.IsEnabled = true;
         PrevButton.IsEnabled = index > 0;
         NextButton.IsEnabled = index < _entries.Count - 1;
         ExportWavCoordButton.IsEnabled = _entries.Any(e => e.HasLabel);
@@ -2073,6 +2208,7 @@ public partial class MainWindow : Window
             "foundinbanks" => entry.FoundInBanks,
             "bankcount" => entry.BankCount,
             "banks" => entry.Banks,
+            "txtpfiles" => entry.TxtpFiles,
             "label" => entry.Label ?? "",
             "duration" => entry.DurationDisplay,
             "channel" => entry.ChannelConfig,
@@ -2224,8 +2360,9 @@ public partial class MainWindow : Window
             NextButton.IsEnabled = false;
             ExportWavCoordButton.IsEnabled = false;
             ExportTracksButton.IsEnabled = false;
+            PlayOwnerTxtpButton.IsEnabled = false;
         }
-        else { Cursor = null; FileListView.IsEnabled = true; }
+        else { Cursor = null; FileListView.IsEnabled = true; PlayOwnerTxtpButton.IsEnabled = _currentIndex >= 0; }
     }
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]

@@ -18,7 +18,17 @@ public class WemEntry : INotifyPropertyChanged
     public string FoundInBanks { get; set; } = "";
     public string BankCount { get; set; } = "";
     public string Banks { get; set; } = "";
+
+    /// <summary>引用了该 WEM 的 txtp 文件名列表，多个以 ';' 分隔（CSV 的 TxtpFiles 列）。</summary>
+    public string TxtpFiles { get; set; } = "";
+
     public Dictionary<string, string> ExtraColumns { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>把 TxtpFiles 列拆成文件名列表。</summary>
+    public IReadOnlyList<string> TxtpFileList =>
+        string.IsNullOrWhiteSpace(TxtpFiles)
+            ? Array.Empty<string>()
+            : TxtpFiles.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     public double DurationSeconds
     {

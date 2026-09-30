@@ -11,3 +11,5 @@ ww*
 WemLabeler/bin/
 WemLabeler/obj/
 *pyc
+utils/
+!utils/two_repos.txt
