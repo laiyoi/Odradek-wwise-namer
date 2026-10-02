@@ -219,8 +219,27 @@ dotnet publish WemLabeler/WemLabeler.csproj --configuration Release --runtime wi
 | ③ 构建音频映射表 | `export_sounds.py 1` | `sound_wem_mapping_export.json`、`missing_wem_files.csv`、`mapping_build.log` |
 | ④ 按映射表导出音频 | `export_sounds.py 2` | 输出目录下的 `*.wav`、`streaming_wem_map.csv`、`export_progress.json` |
 | 按 Event ID 导出 | `export_by_id.py` | `Decoded_Audio_Split/{event}_{wem}.wav`、`wem_map_cache.json` |
-| 分析未使用的 WEM | `link_unused_wem.py` | `unused_wem_with_banks.csv` |
+| 分析未使用的 WEM | `link_unused_wem.py` | `unused_wem_with_banks.csv`（列见下；不再未使用的旧行会保留在末尾） |
 | 重建 txtp 索引 | —（新增） | 内存索引，「播放所属txtp」在没有 `TxtpFiles` 列时使用 |
+
+**分析未使用的 WEM** 产出的 CSV 列为：
+
+```
+WemID,Coord,JsonFile,WemFile,WemPath,FoundInBankRes,TxtpFiles
+```
+
+比旧格式**去掉了无信息量的 `IsStreaming`**，`WemPath` 是 WEM 文件的完整路径。
+更重要的是：**旧文件里除这几列以外的列都会按 WemID 原样保留**（`Label` / `Duration` /
+`Channel`，或你自己加的任意列），重新生成不会把标注清空。
+
+> 需要 `WemPath` 有值就必须先指定对 **Streaming WEM 目录**（导出 `.wem` 的那个文件夹）；
+> 如果该目录不存在，程序会直接报错而不是默默写一堆空路径。
+
+**旧的、已经不再是「未使用」的行不会丢**：旧文件里存在、这次算出来不在「未使用」集合里的
+WEM，会**整行原样追加在文件末尾**（连同 `Label` 等所有信息），日志里会提示带过来了多少行。
+这样反复重新生成也不会丢掉任何人工填过的内容。
+
+> 换句话说：新算出来的行在前面、按 WemID 排序；被"救回来"的历史行在末尾。
 
 **② 用 wwiser 生成 TXTP** 实际执行的就是命令行：
 
@@ -238,6 +257,25 @@ wwiser 的进度输出在 stderr，程序会把 stdout 和 stderr 都实时打�
 每个作业都**在本标签页内联执行**：后台线程运行，日志实时刷到下方文本框，
 进度条显示进度，随时可以点「取消」中断，日志可以一键复制。
 
+### 项目根目录怎么来的
+
+`项目根目录` 会**自动探测**，判定标准是「该目录下存在 `GraphSoundRes` / `BankRes` /
+`WemResJson` / `Extracted_Banks` 之一」，顺序是：
+
+1. `config.json` 里存过的 `BaseDir`（或你手动「浏览...」选过的）；
+2. 当前加载的 CSV 所在目录，逐级向上（最多 8 层）；
+3. **exe 所在目录**，逐级向上（最多 8 层）。
+
+其余所有目录（GraphSoundRes、BankRes、`Extracted_Banks\txtp`、导出目录等）都由项目根目录派生。
+
+> **打包给别人的话要注意**：exe 放在项目树里时第 3 条自然就能命中；把 exe 单独拷到别处
+> （比如下载目录）运行时，往上 8 层都不会有那些标志目录，**自动探测必然失败**。
+> 这种情况下程序**不会**拿 exe 目录充数（否则会出现 `C:\下载\WemLabeler\GraphSoundRes`
+> 这种不存在的路径），而是把该项显示成 `(未设置)` 并弹出一条黄色提示条：
+> 点任意流水线按钮、或点「浏览...」，选一次你用 Odradek 导出资源的那一层文件夹即可，
+> 选择结果会写进 `config.json`，以后不用再选。
+> 「标注音频」标签页只依赖 CSV，不受此项影响，可以直接用。
+
 **路径设置**（标签页顶部）用于指定：
 
 - 项目根目录（含 `GraphSoundRes` / `WemResJson` / `BankRes` 等，通常会自动探测）
@@ -246,7 +284,12 @@ wwiser 的进度输出在 stderr，程序会把 stdout 和 stderr 都实时打�
 - txtp 目录（默认 `Extracted_Banks\txtp`）
 - vgmstream-cli.exe 路径（会自动在 exe 旁边的 utils 里找并回填）
 
-每项后面有「浏览...」和「打开」按钮，最后的「重新探测」会清空手工设置、重新自动探测项目根目录。
+**这些路径框都可以直接手输**，改完立即写回 `config.json`，不用非得点「浏览...」。
+每项后面还有「打开」按钮（在资源管理器里打开该目录；已选中 WEM 时「打开音频目录」会直接定位到该文件），
+最后的「重新探测」会清空手工设置、重新自动探测项目根目录。
+
+「浏览...」用的是 .NET 8+ 的 `OpenFolderDialog`，也就是和「打开CSV」同一套标准资源管理器式对话框
+（带地址栏、导航窗格、搜索框），不是旧版的树形选择框。
 
 > 注意：「分析未使用的 WEM」会重新生成 `unused_wem_with_banks.csv`，覆盖其中由本工具追加的
 > `Label` / `Duration` / `Channel` 三列。程序在检测到当前正加载该文件时会询问是否立即重新加载。

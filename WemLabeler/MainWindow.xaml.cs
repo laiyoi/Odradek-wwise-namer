@@ -179,6 +179,16 @@ public partial class MainWindow : Window
         BtnRebuildTxtpIndex.Content = L("btn_rebuild_txtp_index");
         BtnDownloadTools.Content = L("btn_download_tools");
         BtnOpenUtilsDir.Content = L("btn_open_utils");
+
+        // 标注音频页顶部工具条
+        BtnOpenCsv.Content = L("btn_open_csv");
+        BtnReloadCsv.Content = L("btn_reload_csv");
+        BtnOpenWemFolder.Content = L("btn_open_wem_folder");
+        BtnOpenAudioDir.Content = L("btn_open_audio_dir");
+        BtnOpenTxtpPreview.Content = L("btn_open_txtp_preview");
+        BtnExportCsv.Content = L("btn_export_csv");
+        BtnExportWavAll.Content = L("btn_export_wav_all");
+        BtnSetVgmstream.Content = L("btn_set_vgmstream");
         BtnExportById.Content = L("btn_export_by_id");
         EventIdsLabel.Text = L("lbl_event_ids");
         ChkForceWemCache.Content = L("chk_refresh_wem_cache");
@@ -235,6 +245,9 @@ public partial class MainWindow : Window
 
         _langZhItem.IsChecked = Locale.Language == "zh-CN";
         _langEnItem.IsChecked = Locale.Language == "en-US";
+
+        // 路径标签上带「(未设置)」后缀，切语言后要重新套一遍
+        RefreshExtractPaths();
     }
 
     #region Window Events
@@ -399,6 +412,56 @@ public partial class MainWindow : Window
 
     #region Menu Events
 
+    // ===== 顶部工具条上的按钮（转发到原来的菜单逻辑）=====
+    private void BtnOpenCsv_Click(object sender, RoutedEventArgs e) => OpenCsv_Click();
+    private void BtnReloadCsv_Click(object sender, RoutedEventArgs e) => ReloadCsv_Click();
+    private void BtnOpenWemFolder_Click(object sender, RoutedEventArgs e) => OpenWemFolder_Click();
+    private void BtnOpenTxtpPreview_Click(object sender, RoutedEventArgs e) => OpenTxtp_Click();
+    private void BtnExportCsv_Click(object sender, RoutedEventArgs e) => ExportLabels();
+    private void BtnExportWavAll_Click(object sender, RoutedEventArgs e) => ExportWav();
+
+    private void BtnSetVgmstream_Click(object sender, RoutedEventArgs e)
+    {
+        SetVgmstreamPath();
+        RefreshExtractPaths();
+    }
+
+    /// <summary>
+    /// 打开「音频目录」：优先打开当前选中 WEM 所在文件夹并选中它；
+    /// 没选中就退回 Streaming WEM 目录，再退回已加载 CSV 所在目录。
+    /// </summary>
+    private void BtnOpenAudioDir_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentIndex >= 0 && _currentIndex < _entries.Count)
+        {
+            var path = _entries[_currentIndex].Path;
+            if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+            {
+                OpenPathInExplorer(path);
+                return;
+            }
+        }
+
+        var wemDir = EnsurePaths().WemResWemDir;
+        if (Directory.Exists(wemDir))
+        {
+            OpenPathInExplorer(wemDir);
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(_loadedCsvPath))
+        {
+            var csvDir = Path.GetDirectoryName(_loadedCsvPath);
+            if (!string.IsNullOrEmpty(csvDir) && Directory.Exists(csvDir))
+            {
+                OpenPathInExplorer(csvDir);
+                return;
+            }
+        }
+
+        SetStatus(Locale.S("status_no_audio_dir"));
+    }
+
     private void OpenCsv_Click()
     {
         var initDir = !string.IsNullOrEmpty(_loadedCsvPath) ? Path.GetDirectoryName(_loadedCsvPath) : AppDomain.CurrentDomain.BaseDirectory;
@@ -410,9 +473,9 @@ public partial class MainWindow : Window
 
     private void OpenWemFolder_Click()
     {
-        var wemFolder = PickFolder(Locale.S("dlg_open_wem_folder"));
+        var wemFolder = PickFolder(Locale.S("dlg_open_wem_folder"), EnsurePaths().WemResWemDir);
         if (wemFolder == null) return;
-        var jsonFolder = PickFolder(Locale.S("dlg_open_wem_json_folder"));
+        var jsonFolder = PickFolder(Locale.S("dlg_open_wem_json_folder"), EnsurePaths().WemResJsonDir);
         if (jsonFolder == null) return;
         // Pick CSV save location
         var dlg = new SaveFileDialog
@@ -436,7 +499,7 @@ public partial class MainWindow : Window
                 }
                 Directory.CreateDirectory(Path.GetDirectoryName(csvPath)!);
                 using var writer = new StreamWriter(csvPath, false, Encoding.UTF8);
-                writer.WriteLine("WemID,Coord,JsonFile,IsStreaming,WemSize,WemFile,WemPath,FoundInBankRes,TxtpFiles,Label,Duration,Channel");
+                writer.WriteLine("WemID,Coord,JsonFile,WemSize,WemFile,WemPath,FoundInBankRes,TxtpFiles,Label,Duration,Channel");
                 foreach (var wemPath in files)
                 {
                     var fi = new FileInfo(wemPath);
@@ -499,11 +562,11 @@ public partial class MainWindow : Window
                         }
                     }
                     var size = fi.Length.ToString();
-                    var isStreaming = "False";
                     var durStr = duration >= 0 ? (duration >= 3600
                         ? $"{(int)(duration / 3600)}:{(int)(duration % 3600 / 60):D2}:{(int)(duration % 60):D2}.{(int)(duration * 1000 % 1000):D3}"
                         : $"{(int)(duration / 60)}:{(int)(duration % 60):D2}.{(int)(duration * 1000 % 1000):D3}") : "";
-                    writer.WriteLine($"{EscapeCsv(wemId)},{EscapeCsv(coord)},{EscapeCsv(jsonFile)},{EscapeCsv(isStreaming)},{EscapeCsv(size)},{EscapeCsv(wemFile)},{EscapeCsv(wemPath)},,,,{EscapeCsv(durStr)},");
+                    // 不再写 IsStreaming 列（与「分析未使用的 WEM」产出的格式保持一致）
+                    writer.WriteLine($"{EscapeCsv(wemId)},{EscapeCsv(coord)},{EscapeCsv(jsonFile)},{EscapeCsv(size)},{EscapeCsv(wemFile)},{EscapeCsv(wemPath)},,,,{EscapeCsv(durStr)},");
                 }
                 Dispatcher.Invoke(() =>
                 {
@@ -945,7 +1008,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var outDir = PickFolder(Locale.S("dlg_export_txtp_tracks_choose"));
+        var outDir = PickFolder(Locale.S("dlg_export_txtp_tracks_choose"), EnsurePaths().OutputDir);
         if (outDir == null) return;
 
         var baseName = SanitizeFileName(string.IsNullOrEmpty(_txtpBaseName) ? "txtp" : _txtpBaseName);
@@ -1881,20 +1944,31 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// 回写 CSV：按原表头逐列写，并补上 Label / Duration / Channel。
+    /// 注意 IsStreaming 这一列**不再写出**（和「分析未使用的 WEM」保持一致；
+    /// 读取时仍然兼容含该列的旧文件）。
+    /// </summary>
     private void WriteCsvFile(string path)
     {
         if (_entries.Count == 0) return;
+
+        // 过滤掉不再产出的列（读取时仍兼容）
+        var columns = _originalHeader
+            .Where(h => !h.Equals("IsStreaming", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
         var tmpPath = path + ".tmp";
         using (var writer = new StreamWriter(tmpPath, false, Encoding.UTF8))
         {
-            var hasLabelInHeader = _originalHeader.Any(h =>
+            var hasLabelInHeader = columns.Any(h =>
                 h.Equals("Label", StringComparison.OrdinalIgnoreCase));
-            var hasDurationInHeader = _originalHeader.Any(h =>
+            var hasDurationInHeader = columns.Any(h =>
                 h.Equals("Duration", StringComparison.OrdinalIgnoreCase));
-            var hasChannelInHeader = _originalHeader.Any(h =>
+            var hasChannelInHeader = columns.Any(h =>
                 h.Equals("Channel", StringComparison.OrdinalIgnoreCase));
 
-            var headerParts = new List<string>(_originalHeader);
+            var headerParts = new List<string>(columns);
             if (!hasLabelInHeader) headerParts.Add("Label");
             if (!hasDurationInHeader) headerParts.Add("Duration");
             if (!hasChannelInHeader) headerParts.Add("Channel");
@@ -1903,7 +1977,7 @@ public partial class MainWindow : Window
             foreach (var entry in _entries)
             {
                 var parts = new List<string>();
-                foreach (var col in _originalHeader)
+                foreach (var col in columns)
                     parts.Add(EscapeCsv(GetColumnValue(entry, col)));
                 if (!hasLabelInHeader)
                     parts.Add(EscapeCsv(entry.Label ?? ""));
@@ -1969,7 +2043,7 @@ public partial class MainWindow : Window
         }
         var vgmPath = await EnsureVgmstreamAsync();
         if (vgmPath == null) return;
-        var outDir = PickFolder(Locale.S("dlg_export_wav_choose"));
+        var outDir = PickFolder(Locale.S("dlg_export_wav_choose"), EnsurePaths().OutputDir);
         if (outDir == null) return;
 
         SetBusy(true);
@@ -2080,7 +2154,7 @@ public partial class MainWindow : Window
         var prefix = coordParts.Length == 2 ? $"{coordParts[0]}_{coordParts[1]}" : "unknown";
         var safeLabel = SanitizeFileName(entry.Label ?? entry.Filename);
         var outName = $"{prefix}_{entry.WemID}_{safeLabel}.wav";
-        var outDir = PickFolder(Locale.S("dlg_export_wav_choose"));
+        var outDir = PickFolder(Locale.S("dlg_export_wav_choose"), EnsurePaths().OutputDir);
         if (outDir == null) return;
         var outPath = Path.Combine(outDir, outName);
         if (File.Exists(outPath))
@@ -2334,49 +2408,22 @@ public partial class MainWindow : Window
         else { Cursor = null; FileListView.IsEnabled = true; PlayOwnerTxtpButton.IsEnabled = _currentIndex >= 0; }
     }
 
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    private static extern IntPtr SHBrowseForFolder(ref BROWSEINFO lpbi);
-
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    private static extern bool SHGetPathFromIDList(IntPtr pidl, IntPtr pszPath);
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct BROWSEINFO
+    /// <summary>
+    /// 选择文件夹。用 .NET 8+ 的 <see cref="Microsoft.Win32.OpenFolderDialog"/>
+    /// （就是「打开CSV」那种标准资源管理器样式的对话框），
+    /// 取代以前 SHBrowseForFolder 那个老式树形框。
+    /// </summary>
+    private string? PickFolder(string title, string? initialDirectory = null)
     {
-        public IntPtr hwndOwner;
-        public IntPtr pidlRoot;
-        public IntPtr pszDisplayName;
-        public string lpszTitle;
-        public uint ulFlags;
-        public IntPtr lpfn;
-        public IntPtr lParam;
-        public int iImage;
-    }
+        var dlg = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = title,
+            Multiselect = false
+        };
+        if (!string.IsNullOrWhiteSpace(initialDirectory) && Directory.Exists(initialDirectory))
+            dlg.InitialDirectory = initialDirectory;
 
-    private static string? PickFolder(string title)
-    {
-        var pathPtr = Marshal.AllocHGlobal(260 * 2);
-        try
-        {
-            var bi = new BROWSEINFO
-            {
-                hwndOwner = IntPtr.Zero,
-                lpszTitle = title,
-                ulFlags = 0x00000040 | 0x00000001
-            };
-            var pidl = SHBrowseForFolder(ref bi);
-            if (pidl != IntPtr.Zero)
-            {
-                SHGetPathFromIDList(pidl, pathPtr);
-                Marshal.FreeCoTaskMem(pidl);
-                return Marshal.PtrToStringUni(pathPtr);
-            }
-            return null;
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(pathPtr);
-        }
+        return dlg.ShowDialog(this) == true ? dlg.FolderName : null;
     }
 
     #endregion

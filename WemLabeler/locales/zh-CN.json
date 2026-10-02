@@ -258,7 +258,6 @@
   "about_title": "关于",
   "btn_download_tools": "下载工具 (vgmstream + wwiser)",
   "btn_open_utils": "工具目录",
-  "lbl_not_found": "(未找到)",
   "dlg_python_missing": "没有找到 Python 解释器。\n\nwwiser 是 Python 工具，请安装 Python 3，或在「提取音频」页的「Python 解释器」里手动指定 python.exe。",
   "status_wwiser_running": "wwiser 运行中... {0}",
   "pipe_download_target": "[*] 下载目标目录: {0}",
@@ -279,8 +278,28 @@
   "pipe_vgm_auto_download": "[*] vgmstream 未找到，自动下载到 {0} ...",
   "pipe_vgm_download_failed": "[!] vgmstream 下载失败: {0}",
 
-  "lbl_not_set": "(未设置)",
   "hint_need_basedir": "还没设置项目根目录。请点上方的「浏览...」选择你用 Odradek 导出资源的那一层文件夹（里面有 GraphSoundRes / BankRes / WemResJson 等）。标注音频那个标签页不受影响，可以直接用。",
   "status_need_basedir": "还没设置项目根目录，请先在「提取音频」页点「浏览...」选择导出资源的文件夹",
-  "status_basedir_suspect": "已设为 {0}，但里面没找到 GraphSoundRes / BankRes / WemResJson / Extracted_Banks，请确认选对了文件夹"
+  "status_basedir_suspect": "已设为 {0}，但里面没找到 GraphSoundRes / BankRes / WemResJson / Extracted_Banks，请确认选对了文件夹",
+
+  "btn_reload_csv": "重新加载",
+  "btn_open_audio_dir": "打开音频目录",
+  "status_no_audio_dir": "没有可打开的音频目录：请先加载 CSV，或在「提取音频」页指定 Streaming WEM 目录",
+  "pipe_link_wemdir_missing": "Streaming WEM 目录不存在: {0}\n\n请先在「提取音频」页把它指到导出 .wem 的那个文件夹（否则 WemPath 列会是空的）",
+  "pipe_link_preserved": "[*] 旧文件里的 {0} 个额外列已原样保留（{1} 行有值，共 {2} 个非空值）",
+  "pipe_link_preserve_fail": "[!] 读取旧文件的标注列失败，将不保留: {0}",
+
+  "btn_open_csv": "打开CSV...",
+  "btn_open_wem_folder": "打开WEM文件夹...",
+  "btn_open_txtp_preview": "打开txtp预览...",
+  "btn_export_csv": "导出标注CSV...",
+  "btn_export_wav_all": "导出已标注WAV...",
+  "btn_set_vgmstream": "设置 vgmstream 路径...",
+
+  "lbl_suffix_not_set": "（未设置）",
+  "lbl_suffix_not_found": "（未找到）",
+
+  "status_vgm_still_missing": "下载完成但仍未找到 vgmstream-cli.exe",
+
+  "pipe_link_carried_rows": "[*] 另有 {0} 行旧数据（这些 WEM 这次不再是「未使用」）已连同原有信息原样追加在文件末尾"
 }

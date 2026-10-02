@@ -24,6 +24,9 @@ public partial class MainWindow
     /// <summary>XAML 全部加载完成前，标签页切换事件不能去碰控件。</summary>
     private bool _uiReady;
 
+    /// <summary>程序自己在刷新路径框时置位，避免把刷新的值当成用户输入再写回配置。</summary>
+    private bool _suppressPathEvents;
+
     /// <summary>vgmstream 自动下载任务（多次请求共用一个）。</summary>
     private Task<string>? _vgmDownloadTask;
 
@@ -65,7 +68,7 @@ public partial class MainWindow
         ShowProjectRootHint(true);
 
         // 直接弹出选择框：用户点的就是要用到项目根目录的操作，这里问一次最省事
-        var dir = PickFolder(Locale.S("dlg_set_basedir"));
+        var dir = PickFolder(Locale.S("dlg_set_basedir"), _config.BaseDir ?? EnsurePaths().BaseDir);
         if (dir == null) return false;
 
         _config.BaseDir = dir;
@@ -181,7 +184,7 @@ public partial class MainWindow
         var found = ToolLocator.FindVgmstreamCli();
         if (found == null)
         {
-            SetStatus(Locale.S("status_vgm_download_failed", Locale.S("lbl_not_found")));
+            SetStatus(Locale.S("status_vgm_download_failed", Locale.S("status_vgm_still_missing")));
             return null;
         }
 
@@ -325,25 +328,105 @@ public partial class MainWindow
 
     #region 提取音频页：路径字段
 
-    /// <summary>把当前解析出来的各路径显示到「提取音频」页的输入框里。</summary>
+    /// <summary>
+    /// 把当前解析出来的各路径显示到「提取音频」页的输入框里。
+    /// 输入框现在都是可编辑的，所以**不会**再往里写「(未设置)」这类占位文字
+    /// （否则会被当成用户输入的真值）；没设置就把框留空，并在标签后面加个提示。
+    /// </summary>
     private void RefreshExtractPaths()
     {
         var paths = EnsurePaths();
         var valid = paths.HasBaseDir && PipelinePaths.LooksLikeBaseDir(paths.BaseDir);
-        PathBaseDirBox.Text = valid ? paths.BaseDir
-            : (paths.HasBaseDir ? paths.BaseDir : Locale.S("lbl_not_set"));
+        var notSetSuffix = Locale.S("lbl_suffix_not_set");
+        var notFoundSuffix = Locale.S("lbl_suffix_not_found");
+
+        _suppressPathEvents = true;
+        try
+        {
+            PathBaseDirBox.Text = paths.HasBaseDir ? paths.BaseDir : "";
+
+            // 派生目录：项目根目录没设好就留空（不要显示 "Exported_Audio" 这种相对路径）；
+            // 用户单独指定过的项仍然照实显示。
+            PathOutputDirBox.Text = paths.OutputDirOverride != null || valid ? paths.OutputDir : "";
+            PathWemResWemDirBox.Text = paths.WemResWemDirOverride != null || valid ? paths.WemResWemDir : "";
+            PathTxtpDirBox.Text = paths.TxtpDirOverride != null || valid ? paths.TxtpDir : "";
+
+            // vgmstream：手工指定的路径优先，其次 exe 旁边的 utils
+            var vgm = ToolLocator.FindVgmstreamCli(_config.VgmstreamPath);
+            PathVgmstreamBox.Text = vgm ?? "";
+            if (vgm != null && !string.Equals(_config.VgmstreamPath, vgm, StringComparison.OrdinalIgnoreCase))
+            {
+                _config.VgmstreamPath = vgm;
+                ConfigManager.Save(_config);
+            }
+
+            // 标签后缀：把「未设置 / 未找到」放在标签上，不污染输入框
+            PathBaseDirLabel.Text = valid || paths.HasBaseDir
+                ? Locale.S("lbl_path_basedir")
+                : Locale.S("lbl_path_basedir") + notSetSuffix;
+            PathOutputDirLabel.Text = paths.OutputDirOverride != null || valid
+                ? Locale.S("lbl_path_output") : Locale.S("lbl_path_output") + notSetSuffix;
+            PathWemResWemLabel.Text = paths.WemResWemDirOverride != null || valid
+                ? Locale.S("lbl_path_wemreswem") : Locale.S("lbl_path_wemreswem") + notSetSuffix;
+            PathTxtpDirLabel.Text = paths.TxtpDirOverride != null || valid
+                ? Locale.S("lbl_path_txtp") : Locale.S("lbl_path_txtp") + notSetSuffix;
+            PathVgmstreamLabel.Text = vgm != null
+                ? Locale.S("lbl_path_vgmstream") : Locale.S("lbl_path_vgmstream") + notFoundSuffix;
+        }
+        finally
+        {
+            _suppressPathEvents = false;
+        }
+
         ShowProjectRootHint(!valid);
         if (ProjectRootHintText != null) ProjectRootHintText.Text = Locale.S("hint_need_basedir");
-        PathOutputDirBox.Text = paths.OutputDir;
-        PathWemResWemDirBox.Text = paths.WemResWemDir;
-        PathTxtpDirBox.Text = paths.TxtpDir;
+    }
 
-        // vgmstream 只从「exe 旁边的 utils」里找，找到就写回配置
-        var vgm = ToolLocator.FindVgmstreamCli();
-        PathVgmstreamBox.Text = vgm ?? Locale.S("lbl_not_found");
-        if (vgm != null && !string.Equals(_config.VgmstreamPath, vgm, StringComparison.OrdinalIgnoreCase))
+    /// <summary>
+    /// 路径输入框允许直接手输。改动即写回 config.json；
+    /// 程序自己刷新界面时用 _suppressPathEvents 屏蔽，避免打架。
+    /// </summary>
+    private void PathBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        if (!_uiReady || _suppressPathEvents) return;
+        if (sender is not System.Windows.Controls.TextBox box) return;
+
+        var text = box.Text.Trim();
+        string? value = text.Length == 0 ? null : text;
+
+        if (ReferenceEquals(box, PathBaseDirBox))
         {
-            _config.VgmstreamPath = vgm;
+            if (string.Equals(_config.BaseDir, value, StringComparison.OrdinalIgnoreCase)) return;
+            _config.BaseDir = value;
+            ConfigManager.Save(_config);
+            InvalidatePaths();
+            RefreshExtractPaths();
+        }
+        else if (ReferenceEquals(box, PathOutputDirBox))
+        {
+            if (string.Equals(_config.OutputAudioDir, value, StringComparison.Ordinal)) return;
+            _config.OutputAudioDir = value;
+            ConfigManager.Save(_config);
+            InvalidatePaths();
+        }
+        else if (ReferenceEquals(box, PathWemResWemDirBox))
+        {
+            if (string.Equals(_config.WemResWemDir, value, StringComparison.Ordinal)) return;
+            _config.WemResWemDir = value;
+            ConfigManager.Save(_config);
+            InvalidatePaths();
+        }
+        else if (ReferenceEquals(box, PathTxtpDirBox))
+        {
+            if (string.Equals(_config.TxtpDir, value, StringComparison.Ordinal)) return;
+            _config.TxtpDir = value;
+            ConfigManager.Save(_config);
+            InvalidatePaths();
+        }
+        else if (ReferenceEquals(box, PathVgmstreamBox))
+        {
+            if (string.Equals(_config.VgmstreamPath, value, StringComparison.Ordinal)) return;
+            _config.VgmstreamPath = value;
             ConfigManager.Save(_config);
         }
     }
@@ -356,7 +439,7 @@ public partial class MainWindow
 
     private void BtnBrowseBaseDir_Click(object sender, RoutedEventArgs e)
     {
-        var dir = PickFolder(Locale.S("dlg_set_basedir"));
+        var dir = PickFolder(Locale.S("dlg_set_basedir"), _config.BaseDir);
         if (dir == null) return;
         _config.BaseDir = dir;
         ConfigManager.Save(_config);
@@ -367,7 +450,7 @@ public partial class MainWindow
 
     private void BtnBrowseOutputDir_Click(object sender, RoutedEventArgs e)
     {
-        var dir = PickFolder(Locale.S("dlg_set_outputdir"));
+        var dir = PickFolder(Locale.S("dlg_set_outputdir"), _config.OutputAudioDir ?? EnsurePaths().OutputDir);
         if (dir == null) return;
         _config.OutputAudioDir = dir;
         ConfigManager.Save(_config);
@@ -378,7 +461,7 @@ public partial class MainWindow
 
     private void BtnBrowseWemResWemDir_Click(object sender, RoutedEventArgs e)
     {
-        var dir = PickFolder(Locale.S("dlg_set_wemreswemdir"));
+        var dir = PickFolder(Locale.S("dlg_set_wemreswemdir"), _config.WemResWemDir ?? EnsurePaths().WemResWemDir);
         if (dir == null) return;
         _config.WemResWemDir = dir;
         ConfigManager.Save(_config);
@@ -389,7 +472,7 @@ public partial class MainWindow
 
     private void BtnBrowseTxtpDir_Click(object sender, RoutedEventArgs e)
     {
-        var dir = PickFolder(Locale.S("dlg_set_txtpdir"));
+        var dir = PickFolder(Locale.S("dlg_set_txtpdir"), _config.TxtpDir ?? EnsurePaths().TxtpDir);
         if (dir == null) return;
         _config.TxtpDir = dir;
         ConfigManager.Save(_config);

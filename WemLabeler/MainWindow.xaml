@@ -55,7 +55,7 @@
                             <TextBlock x:Name="PathBaseDirLabel" Grid.Row="0" Grid.Column="0"
                                        VerticalAlignment="Center" Margin="0,0,8,4"/>
                             <TextBox x:Name="PathBaseDirBox" Grid.Row="0" Grid.Column="1"
-                                     Margin="0,0,6,4" Padding="3,2" IsReadOnly="True"/>
+                                     Margin="0,0,6,4" Padding="3,2" TextChanged="PathBox_TextChanged"/>
                             <Button x:Name="BtnBrowseBaseDir" Grid.Row="0" Grid.Column="2"
                                     Width="76" Margin="0,0,6,4" Click="BtnBrowseBaseDir_Click"/>
                             <Button x:Name="BtnOpenBaseDir" Grid.Row="0" Grid.Column="3"
@@ -64,7 +64,7 @@
                             <TextBlock x:Name="PathOutputDirLabel" Grid.Row="1" Grid.Column="0"
                                        VerticalAlignment="Center" Margin="0,0,8,4"/>
                             <TextBox x:Name="PathOutputDirBox" Grid.Row="1" Grid.Column="1"
-                                     Margin="0,0,6,4" Padding="3,2" IsReadOnly="True"/>
+                                     Margin="0,0,6,4" Padding="3,2" TextChanged="PathBox_TextChanged"/>
                             <Button x:Name="BtnBrowseOutputDir" Grid.Row="1" Grid.Column="2"
                                     Width="76" Margin="0,0,6,4" Click="BtnBrowseOutputDir_Click"/>
                             <Button x:Name="BtnOpenOutputDir" Grid.Row="1" Grid.Column="3"
@@ -73,7 +73,7 @@
                             <TextBlock x:Name="PathWemResWemLabel" Grid.Row="2" Grid.Column="0"
                                        VerticalAlignment="Center" Margin="0,0,8,4"/>
                             <TextBox x:Name="PathWemResWemDirBox" Grid.Row="2" Grid.Column="1"
-                                     Margin="0,0,6,4" Padding="3,2" IsReadOnly="True"/>
+                                     Margin="0,0,6,4" Padding="3,2" TextChanged="PathBox_TextChanged"/>
                             <Button x:Name="BtnBrowseWemResWemDir" Grid.Row="2" Grid.Column="2"
                                     Width="76" Margin="0,0,6,4" Click="BtnBrowseWemResWemDir_Click"/>
                             <Button x:Name="BtnOpenWemResWemDir" Grid.Row="2" Grid.Column="3"
@@ -82,7 +82,7 @@
                             <TextBlock x:Name="PathTxtpDirLabel" Grid.Row="3" Grid.Column="0"
                                        VerticalAlignment="Center" Margin="0,0,8,4"/>
                             <TextBox x:Name="PathTxtpDirBox" Grid.Row="3" Grid.Column="1"
-                                     Margin="0,0,6,4" Padding="3,2" IsReadOnly="True"/>
+                                     Margin="0,0,6,4" Padding="3,2" TextChanged="PathBox_TextChanged"/>
                             <Button x:Name="BtnBrowseTxtpDir" Grid.Row="3" Grid.Column="2"
                                     Width="76" Margin="0,0,6,4" Click="BtnBrowseTxtpDir_Click"/>
                             <Button x:Name="BtnOpenTxtpDir" Grid.Row="3" Grid.Column="3"
@@ -91,7 +91,7 @@
                             <TextBlock x:Name="PathVgmstreamLabel" Grid.Row="4" Grid.Column="0"
                                        VerticalAlignment="Center" Margin="0,0,8,0"/>
                             <TextBox x:Name="PathVgmstreamBox" Grid.Row="4" Grid.Column="1"
-                                     Margin="0,0,6,0" Padding="3,2" IsReadOnly="True"/>
+                                     Margin="0,0,6,0" Padding="3,2" TextChanged="PathBox_TextChanged"/>
                             <Button x:Name="BtnBrowseVgmstream" Grid.Row="4" Grid.Column="2"
                                     Width="76" Margin="0,0,6,0" Click="BtnBrowseVgmstream_Click"/>
                             <Button x:Name="BtnResetPaths" Grid.Row="4" Grid.Column="3"
@@ -189,14 +189,42 @@
             <!-- ===================== 标签页 2：标注音频 ===================== -->
             <TabItem x:Name="LabelTab">
                 <Grid Margin="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="3*" MinWidth="280"/>
                         <ColumnDefinition Width="5"/>
                         <ColumnDefinition Width="5*" MinWidth="300"/>
                     </Grid.ColumnDefinitions>
 
+                    <!-- 顶部工具条：把最常用的操作放到显眼位置 -->
+                    <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3"
+                            Background="#F0F0F0" BorderBrush="#CCC" BorderThickness="0,0,0,1"
+                            Padding="6" Margin="0,0,0,4">
+                        <WrapPanel>
+                            <Button x:Name="BtnOpenCsv" MinWidth="120" Height="30" FontWeight="SemiBold"
+                                    Margin="0,0,6,4" Click="BtnOpenCsv_Click"/>
+                            <Button x:Name="BtnReloadCsv" MinWidth="90" Height="30"
+                                    Margin="0,0,6,4" Click="BtnReloadCsv_Click"/>
+                            <Button x:Name="BtnOpenWemFolder" MinWidth="150" Height="30"
+                                    Margin="0,0,6,4" Click="BtnOpenWemFolder_Click"/>
+                            <Button x:Name="BtnOpenAudioDir" MinWidth="120" Height="30"
+                                    Margin="0,0,6,4" Click="BtnOpenAudioDir_Click"/>
+                            <Button x:Name="BtnOpenTxtpPreview" MinWidth="120" Height="30"
+                                    Margin="0,0,6,4" Click="BtnOpenTxtpPreview_Click"/>
+                            <Button x:Name="BtnExportCsv" MinWidth="120" Height="30"
+                                    Margin="0,0,6,4" Click="BtnExportCsv_Click"/>
+                            <Button x:Name="BtnExportWavAll" MinWidth="140" Height="30"
+                                    Margin="0,0,6,4" Click="BtnExportWavAll_Click"/>
+                            <Button x:Name="BtnSetVgmstream" MinWidth="150" Height="30"
+                                    Margin="0,0,6,4" Click="BtnSetVgmstream_Click"/>
+                        </WrapPanel>
+                    </Border>
+
                     <!-- Left: File List -->
-                    <Grid Grid.Column="0">
+                    <Grid Grid.Row="1" Grid.Column="0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
@@ -255,10 +283,10 @@
                     </Grid>
 
                     <!-- Splitter -->
-                    <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#CCC"/>
+                    <GridSplitter Grid.Row="1" Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#CCC"/>
 
                     <!-- Right Panel -->
-                    <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" Padding="10">
+                    <ScrollViewer Grid.Row="1" Grid.Column="2" VerticalScrollBarVisibility="Auto" Padding="10">
                         <StackPanel>
 
                             <!-- File Info -->

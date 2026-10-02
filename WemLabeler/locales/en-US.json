@@ -258,7 +258,6 @@
   "about_title": "About",
   "btn_download_tools": "Download tools (vgmstream + wwiser)",
   "btn_open_utils": "Utils dir",
-  "lbl_not_found": "(not found)",
   "dlg_python_missing": "No Python interpreter found.\n\nwwiser is a Python tool: install Python 3, or pick python.exe in the 'Python interpreter' field on the Extract Audio tab.",
   "status_wwiser_running": "wwiser running... {0}",
   "pipe_download_target": "[*] Download target: {0}",
@@ -279,8 +278,29 @@
   "pipe_vgm_auto_download": "[*] vgmstream not found; downloading it into {0} ...",
   "pipe_vgm_download_failed": "[!] vgmstream download failed: {0}",
 
-  "lbl_not_set": "(not set)",
-  "hint_need_basedir": "The project root is not set yet. Click "Browse..." above and pick the folder you exported resources into with Odradek (the one containing GraphSoundRes / BankRes / WemResJson). The Label Audio tab is unaffected and works as-is.",
-  "status_need_basedir": "Project root is not set; pick the exported-resources folder via "Browse..." on the Extract Audio tab",
-  "status_basedir_suspect": "Set to {0}, but no GraphSoundRes / BankRes / WemResJson / Extracted_Banks found inside; please double-check the folder"
+
+  "hint_need_basedir": "The project root is not set yet. Click \"Browse...\" above and pick the folder you exported resources into with Odradek (the one containing GraphSoundRes / BankRes / WemResJson). The Label Audio tab is unaffected and works as-is.",
+  "status_need_basedir": "Project root is not set; pick the exported-resources folder via \"Browse...\" on the Extract Audio tab",
+  "status_basedir_suspect": "Set to {0}, but no GraphSoundRes / BankRes / WemResJson / Extracted_Banks found inside; please double-check the folder",
+
+  "btn_reload_csv": "Reload",
+  "btn_open_audio_dir": "Open audio folder",
+  "status_no_audio_dir": "No audio folder to open: load a CSV first, or set the Streaming WEM folder on the Extract Audio tab",
+  "pipe_link_wemdir_missing": "Streaming WEM folder does not exist: {0}\n\nPoint it at the folder holding the exported .wem files on the Extract Audio tab (otherwise the WemPath column will be empty)",
+  "pipe_link_preserved": "[*] Kept {0} extra column(s) from the old file as-is ({1} rows with values, {2} non-empty values)",
+  "pipe_link_preserve_fail": "[!] Failed to read the old file's label columns; they will not be preserved: {0}",
+
+  "btn_open_csv": "Open CSV...",
+  "btn_open_wem_folder": "Open WEM folder...",
+  "btn_open_txtp_preview": "Open txtp preview...",
+  "btn_export_csv": "Export labels CSV...",
+  "btn_export_wav_all": "Export labeled WAV...",
+  "btn_set_vgmstream": "Set vgmstream path...",
+
+  "lbl_suffix_not_set": " (not set)",
+  "lbl_suffix_not_found": " (not found)",
+
+  "status_vgm_still_missing": "download finished but vgmstream-cli.exe is still missing",
+
+  "pipe_link_carried_rows": "[*] {0} row(s) from the old file (no longer unused) were carried over as-is at the end of the file"
 }

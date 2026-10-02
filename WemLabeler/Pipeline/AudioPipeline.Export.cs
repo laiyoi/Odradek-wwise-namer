@@ -398,6 +398,10 @@ public static partial class AudioPipeline
         var wemJsonIndex = BuildWemResJsonIndex(paths, log);
         SafeLog(log, Locale.S("pipe_link_wemresjson", wemJsonIndex.Count));
 
+        // WemPath 这一列全靠这个目录：不存在就别默默写一堆空路径出来
+        if (!Directory.Exists(paths.WemResWemDir))
+            throw new DirectoryNotFoundException(Locale.S("pipe_link_wemdir_missing", paths.WemResWemDir));
+
         var wemFileIndex = BuildWemFileByCoordIndex(paths);
         SafeLog(log, Locale.S("pipe_link_wemreswem", wemFileIndex.Count));
 
@@ -438,7 +442,7 @@ public static partial class AudioPipeline
                 WemID = wemId,
                 Coord = info.Coord,
                 JsonFile = info.JsonFile,
-                IsStreaming = info.IsStreaming,
+
                 WemFile = wemFilename,
                 WemPath = wemPath
             };
@@ -477,29 +481,181 @@ public static partial class AudioPipeline
         return results.Count;
     }
 
+    /// <summary>新格式的基础列（去掉了无信息量的 IsStreaming）。</summary>
+    private static readonly string[] UnusedCsvBaseHeader =
+    {
+        "WemID", "Coord", "JsonFile", "WemFile", "WemPath", "FoundInBankRes", "TxtpFiles"
+    };
+
+    /// <summary>
+    /// 旧格式里有、但新格式**明确不再产出**的列：这些列属于「本工具负责的字段」，
+    /// 不要当成额外列保留回来（其余非基础列一律原样保留）。
+    /// </summary>
+    private static readonly string[] UnusedCsvDroppedHeader = { "IsStreaming" };
+
+    /// <summary>
+    /// 写 unused_wem_with_banks.csv：
+    ///   基础列 = WemID,Coord,JsonFile,WemFile,WemPath,FoundInBankRes,TxtpFiles
+    ///   + 旧文件里**除基础列与被删列以外的所有列**（原顺序），值按 WemID 原样带过来
+    ///
+    /// 另外：旧文件里存在、但这次不再是「未使用」的 WEM，**整行原样追加在末尾**
+    /// （连同它们的标注等额外列），这样重新生成不会丢掉任何人工填过的信息。
+    ///
+    /// 被明确删掉的列（IsStreaming）不写、也不带回。
+    /// </summary>
     private static void WriteUnusedWemWithBanksCsv(string path, List<UnusedWemRow> rows, Action<string>? log)
     {
         try
         {
-            using var writer = new StreamWriter(path, false, new UTF8Encoding(false));
-            writer.WriteLine("WemID,Coord,JsonFile,IsStreaming,WemFile,WemPath,FoundInBankRes,TxtpFiles");
-            foreach (var r in rows)
+            var baseSet = new HashSet<string>(UnusedCsvBaseHeader, StringComparer.OrdinalIgnoreCase);
+            var droppedSet = new HashSet<string>(UnusedCsvDroppedHeader, StringComparer.OrdinalIgnoreCase);
+            var extraColumns = new List<string>();                  // 旧文件里的额外列（保序）
+            var extraIndexes = new List<int>();                     // 它们在旧行里的下标
+            var baseIndexes = new List<int>();                      // 新基础列各自在旧行里的下标（缺则 -1）
+            var extraValues = new Dictionary<long, List<string>>();  // WemID -> 额外列的值
+            var oldCells = new Dictionary<long, List<string>>();     // WemID -> 旧行的全部单元格
+            var oldOrder = new List<long>();                        // 旧文件里的行顺序
+
+            if (File.Exists(path))
             {
-                writer.WriteLine(string.Join(",",
-                    EscapeCsv(r.WemID.ToString()),
-                    EscapeCsv(r.Coord),
-                    EscapeCsv(r.JsonFile),
-                    EscapeCsv(r.IsStreaming),
-                    EscapeCsv(r.WemFile),
-                    EscapeCsv(r.WemPath),
-                    EscapeCsv(r.FoundInBankRes),
-                    EscapeCsv(r.TxtpFiles)));
+                try
+                {
+                    var oldLines = File.ReadAllLines(path);
+                    if (oldLines.Length > 0)
+                    {
+                        var oldHeader = ParseCsvLine(oldLines[0]).Select(h => h.Trim()).ToList();
+                        foreach (var name in UnusedCsvBaseHeader)
+                            baseIndexes.Add(oldHeader.FindIndex(h => h.Equals(name, StringComparison.OrdinalIgnoreCase)));
+
+                        for (int i = 0; i < oldHeader.Count; i++)
+                        {
+                            if (baseSet.Contains(oldHeader[i]) || droppedSet.Contains(oldHeader[i])) continue;
+                            extraColumns.Add(oldHeader[i]);
+                            extraIndexes.Add(i);
+                        }
+
+                        var idIdx = oldHeader.FindIndex(h => h.Equals("WemID", StringComparison.OrdinalIgnoreCase));
+                        if (idIdx >= 0)
+                        {
+                            for (int i = 1; i < oldLines.Length; i++)
+                            {
+                                var parts = ParseCsvLine(oldLines[i]);
+                                if (idIdx >= parts.Count) continue;
+                                if (!long.TryParse(parts[idIdx].Trim(), out var id)) continue;
+
+                                oldOrder.Add(id);
+                                oldCells[id] = parts;
+
+                                var values = new List<string>(extraIndexes.Count);
+                                foreach (var idx in extraIndexes)
+                                    values.Add(idx < parts.Count ? parts[idx] : "");
+                                extraValues[id] = values;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SafeLog(log, Locale.S("pipe_link_preserve_fail", ex.Message));
+                    extraColumns.Clear();
+                    extraIndexes.Clear();
+                    baseIndexes.Clear();
+                    extraValues.Clear();
+                    oldCells.Clear();
+                    oldOrder.Clear();
+                }
+            }
+
+            var header = new List<string>(UnusedCsvBaseHeader);
+            header.AddRange(extraColumns);
+
+            var written = new HashSet<long>();
+            using (var writer = new StreamWriter(path, false, new UTF8Encoding(false)))
+            {
+                writer.WriteLine(string.Join(",", header));
+
+                int keptValues = 0, keptRows = 0;
+                foreach (var r in rows)
+                {
+                    written.Add(r.WemID);
+
+                    var cells = new List<string>
+                    {
+                        EscapeCsv(r.WemID.ToString()),
+                        EscapeCsv(r.Coord),
+                        EscapeCsv(r.JsonFile),
+                        EscapeCsv(r.WemFile),
+                        EscapeCsv(r.WemPath),
+                        EscapeCsv(r.FoundInBankRes),
+                        EscapeCsv(r.TxtpFiles)
+                    };
+
+                    if (extraColumns.Count > 0)
+                    {
+                        var values = extraValues.TryGetValue(r.WemID, out var v) ? v : null;
+                        bool rowKept = false;
+                        for (int i = 0; i < extraColumns.Count; i++)
+                        {
+                            var value = values != null && i < values.Count ? values[i] : "";
+                            if (!string.IsNullOrWhiteSpace(value)) { keptValues++; rowKept = true; }
+                            cells.Add(EscapeCsv(value));
+                        }
+                        if (rowKept) keptRows++;
+                    }
+
+                    writer.WriteLine(string.Join(",", cells));
+                }
+
+                if (extraColumns.Count > 0)
+                    SafeLog(log, Locale.S("pipe_link_preserved", extraColumns.Count, keptRows, keptValues));
+
+                // 旧文件里还有、这次不再是「未使用」的行：整行追加到末尾，信息一点不丢。
+                int carried = 0;
+                var seen = new HashSet<long>();
+                foreach (var id in oldOrder)
+                {
+                    if (written.Contains(id) || !seen.Add(id)) continue;
+                    if (!oldCells.TryGetValue(id, out var cells)) continue;
+
+                    var rebuilt = new List<string>(baseIndexes.Count + extraIndexes.Count);
+                    foreach (var bi in baseIndexes)
+                        rebuilt.Add(EscapeCsv(bi >= 0 && bi < cells.Count ? cells[bi] : ""));
+                    foreach (var ei in extraIndexes)
+                        rebuilt.Add(EscapeCsv(ei < cells.Count ? cells[ei] : ""));
+
+                    writer.WriteLine(string.Join(",", rebuilt));
+                    carried++;
+                }
+
+                if (carried > 0)
+                    SafeLog(log, Locale.S("pipe_link_carried_rows", carried));
             }
         }
         catch (Exception ex)
         {
             SafeLog(log, Locale.S("pipe_link_write_fail", ex.Message));
         }
+    }
+
+    /// <summary>最简 CSV 行解析（支持双引号包裹与 "" 转义）。</summary>
+    private static List<string> ParseCsvLine(string line)
+    {
+        var result = new List<string>();
+        var current = new System.Text.StringBuilder();
+        bool inQuotes = false;
+        for (int i = 0; i < line.Length; i++)
+        {
+            var c = line[i];
+            if (c == '"')
+            {
+                if (inQuotes && i + 1 < line.Length && line[i + 1] == '"') { current.Append('"'); i++; }
+                else inQuotes = !inQuotes;
+            }
+            else if (c == ',' && !inQuotes) { result.Add(current.ToString()); current.Clear(); }
+            else current.Append(c);
+        }
+        result.Add(current.ToString());
+        return result;
     }
 
     internal static string EscapeCsv(string value)

@@ -231,8 +231,8 @@ public static partial class AudioPipeline
         return map;
     }
 
-    /// <summary>WemID → 坐标 / JSON 文件名 / IsStreaming。</summary>
-    internal sealed record WemResInfo(string Coord, string JsonFile, string IsStreaming);
+    /// <summary>WemID → 坐标 / JSON 文件名。</summary>
+    internal sealed record WemResInfo(string Coord, string JsonFile);
 
     internal static Dictionary<uint, WemResInfo> BuildWemResJsonIndex(PipelinePaths paths, Action<string>? log)
     {
@@ -255,8 +255,7 @@ public static partial class AudioPipeline
                 if (!rawId.HasValue) continue;
                 index[ToU32(rawId.Value)] = new WemResInfo(
                     $"{parts[1]}:{parts[2]}",
-                    Path.GetFileName(file),
-                    JsonString(doc.RootElement, "IsStreaming") ?? "");
+                    Path.GetFileName(file));
             }
             catch { }
         }

@@ -57,7 +57,6 @@ public sealed class UnusedWemRow
     public long WemID { get; set; }
     public string Coord { get; set; } = "";
     public string JsonFile { get; set; } = "";
-    public string IsStreaming { get; set; } = "";
     public string WemFile { get; set; } = "";
     public string WemPath { get; set; } = "";
     public string FoundInBankRes { get; set; } = "否";
