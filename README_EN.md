@@ -8,271 +8,359 @@ An audio file naming and export tool based on [Odradek](https://github.com/Shade
 
 ## Introduction
 
-[Odradek](https://github.com/ShadelessFox/odradek) is a Horizon Forbidden West asset viewer and extractor, a reincarnation of [Decima Workshop](https://github.com/ShadelessFox/decima). It is designed for modders working with Decima engine games, providing capabilities for viewing and extracting game assets.
+[Odradek](https://github.com/ShadelessFox/odradek) is a Horizon Forbidden West asset viewer and extractor, a reincarnation of [Decima Workshop](https://github.com/ShadelessFox/decima). It is designed for modders working with Decima engine games.
 
-This project utilizes Odradek as a foundation to automate the naming and exporting of Death Stranding 2 audio resources.
+This project builds two things on top of it:
+
+1. **Exporting assets** — it reads `streaming_graph.core` straight from the DS2 installation, searches objects by type and writes them out as JSON.
+   **No Odradek GUI and no `odradek.exe` required.**
+   This part is done by [OdradekSharp/](OdradekSharp/) in this repository (another agent's C# port of Odradek; both the graph statistics and the export results were verified against Odradek).
+2. **Naming and exporting audio** — BNK extraction → TXTP generation with wwiser → mapping build → WAV export, plus text labeling of unused WEM files.
+
+The whole pipeline lives in the **WemLabeler** GUI, in two tabs: **"Extract Audio" comes first, "Label Audio" second**.
+
+> The 7 Python scripts are still kept under `pyscript/` as the original reference implementation (they read and write exactly the same file formats), but they are no longer the main path.
 
 ## Prerequisites
 
-- [Odradek](https://github.com/ShadelessFox/odradek) - For exporting game assets
-- [wwiser](https://github.com/bnnm/wwiser) - For parsing Wwise Banks and generating TXTP files
-- [vgmstream](https://github.com/vgmstream/vgmstream) - For converting WEM to WAV
-- [.NET 10.0 Desktop Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) - To run WemLabeler
-- Python 3.x (**optional**: every script below has been migrated into WemLabeler's Extract Audio tab, so Python is no longer required)
+| Requirement | Purpose |
+| --- | --- |
+| **Death Stranding 2** game install | Source for the asset export (step 0) — the folder containing `DS2.exe` |
+| [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) | **Building** WemLabeler |
+| [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) | **Running** WemLabeler (when using the published single-file build) |
+| Python 3.x | **Only needed for ② "Generate TXTP with wwiser"**; the interpreter is found on `PATH` automatically, no configuration |
+| [wwiser](https://github.com/bnnm/wwiser) · [vgmstream](https://github.com/vgmstream/vgmstream) | Downloaded **automatically** by the app, see below |
+
+**No longer required:** [Odradek](https://github.com/ShadelessFox/odradek) itself or `odradek.exe`.
+
+### Where the tools are downloaded to
+
+Both external tools go into the **`utils\` folder next to the exe** (not the `utils\` in the project root):
+
+| Tool | Source | Destination |
+| --- | --- | --- |
+| vgmstream | latest release of `vgmstream/vgmstream-releases` | `<exe>\utils\vgmstream-win\` |
+| wwiser | `wwiser.pyz` | `<exe>\utils\` |
+
+Put `wwnames.db3` next to `wwiser.pyz` (i.e. in `<exe>\utils\`) and the generated txtp files will carry readable event names.
+You can also trigger the download manually with **"Download tools (vgmstream + wwiser)"**; the **"Utils dir"** button opens that folder.
 
 ## Usage Steps
 
-> **Recommended**: steps 2, 4 and 5 are all available from **WemLabeler**'s Extract Audio tab — no Python and
-> no editing hard-coded paths in scripts. The original Python scripts remain in the repository and read
-> and write exactly the same file formats, so the two can be mixed freely.
->
-> | WemLabeler menu | Equivalent script |
-> | --------------- | ----------------- |
-> | Extract Audio → Download tools | — (new) | vgmstream + wwiser next to the exe (utils\) |
-> | Extract Audio → ① Extract BNK from BankRes | `extract_bnk_from_json.py` |
-> | Extract Audio → ② Generate TXTP with wwiser | the manual wwiser GUI step |
-> | Extract Audio → ② Build Audio Mapping | `export_sounds.py 1` |
-> | Extract Audio → ③ Export Audio from Mapping | `export_sounds.py 2` |
-> | Extract Audio → ②+③ Build Mapping and Export | `export_sounds.py 12` |
-> | Extract Audio → Export by Event ID | `export_by_id.py` |
-> | Extract Audio → Analyze Unused WEM | `link_unused_wem.py` |
->
-> On first use set the project root, audio output folder, streaming WEM folder and txtp folder via
-> **Extract Audio** tab's path fields (they are auto-detected in most cases).
+Everything happens in WemLabeler's two tabs:
 
-### Step 1: Export Resources with Odradek
+- **Extract Audio** (opened by default): the whole pipeline — walk through the buttons in order (0 → ① → ② → ③ → ④)
+- **Label Audio**: load a CSV, listen, write labels
 
-Use Odradek to export the following resources from Death Stranding 2 (all in JSON format):
+The mapping between buttons and the original Python scripts is in [Original Python Scripts (Reference)](#original-python-scripts-reference).
 
-| Resource Type | Export Format | Export Path |
-|---------|---------|---------|
-| WwiseWemResource | `.wem` files | `d:\Odradek-wwise-namer\WemResWem` |
-| WwiseWemResource | `.json` files | `d:\Odradek-wwise-namer\WemRes` |
-| WwiseBankResource | `.json` files | `d:\Odradek-wwise-namer\BankRes` |
-| GraphSoundResource | `.json` files | `d:\Odradek-wwise-namer\GraphSoundRes` |
-| GraphProgramResource | `.json` files | `d:\Odradek-wwise-namer\GraphPgmRes` |
-| NodeConstantsResource | `.json` files | `d:\Odradek-wwise-namer\NodeConstRes` |
-| WwiseID | `.json` files | `d:\Odradek-wwise-namer\WwiseID` |
+### ⓪ Export assets (read game files)
 
-### Step 2: Extract BNK Files
+Click **"⓪ Export assets (read game files)"**.
 
-Run the Python script to extract Wwise Bank data from JSON:
+- Reads `<game root>\LocalCacheWinGame\package\streaming_graph.core` directly
+- A game folder is recognised by having `DS2.exe` in it; **"Auto-find"** scans the Steam libraries on every drive
+- Searching objects by type is a **pure metadata operation, no deserialization**; only the matched objects are read and written out as JSON
+- **Incremental**: files that already exist are skipped, so an interrupted run just continues where it stopped
 
-```bash
-cd d:\Odradek-wwise-namer
-python pyscript\extract_bnk_from_json.py
-```
+Measured graph and object counts (DS2 2026-10 build):
 
-This script will:
-- Read JSON files from `BankRes`
-- Decode Base64-encoded BankData
-- Fix Wwise Bank data alignment issues
-- Save extracted `.bnk` files to `Extracted_Banks` directory
+| Item | Value |
+| --- | --- |
+| Graph size | 79,323 groups / 5,354,196 objects / 241 files |
 
-### Step 3: Generate TXTP with wwiser
+| Type | Objects | Output folder |
+| --- | --- | --- |
+| WwiseWemResource | 7,838 | `<project root>\WemResJson` |
+| WwiseBankResource | 74 | `<project root>\BankRes` |
+| GraphSoundResource | 5,700 | `<project root>\GraphSoundRes` |
+| GraphProgramResource | 25,663 | `<project root>\GraphPgmRes` |
+| NodeConstantsResource | 26,385 | `<project root>\NodeConstRes` |
+| WwiseID | 7,000 | `<project root>\WwiseID` |
 
-Use [wwiser](https://github.com/bnnm/wwiser) to read all `.bnk` files in the `Extracted_Banks` directory and generate `.txtp` files.
+These counts are **exactly equal** to the number of files Odradek actually exported.
 
-1. Open wwiser (double-click `wwiser.pyz`)
-2. Click **Load dirs...**, select `d:\Odradek-wwise-namer\Extracted_Banks` directory
-3. Click **Generate TXTP** to generate `.txtp` files
-4. Ensure .txtp files are generated in `Extracted_Banks\txtp` directory
+### ① Extract BNK from BankRes
 
-> This whole step is automated in WemLabeler: the **② Generate TXTP with wwiser** button runs
-> `python <utils>\wwiser.pyz -g -go "<Extracted_Banks>\txtp" "<Extracted_Banks>\*.bnk"`.
+Click **"① Extract BNK from BankRes"**. The app will:
 
-### Step 4: Run Export Script
+- Read the JSON files in `BankRes`
+- Decode the Base64-encoded `BankData`
+- Fix the Wwise Bank data alignment
+- Write the `.bnk` files into `Extracted_Banks\`
+
+### ② Generate TXTP with wwiser
+
+Click **"② Generate TXTP with wwiser"**. The command it actually runs is:
 
 ```bash
-cd d:\Odradek-wwise-namer
-python pyscript\export_sounds.py
+python "<exe>\utils\wwiser.pyz" -g -go "<project root>\Extracted_Banks\txtp" "<project root>\Extracted_Banks\*.bnk"
 ```
 
-This script will:
-- Build an audio mapping table, associating GraphSoundResource, GraphProgramResource, NodeConstantsResource, and WwiseID
-- Parse audio sources (Embedded or Streaming) from TXTP files
-- Use vgmstream to export audio as WAV format
-- Generate `streaming_wem_map.csv` to record missing Streaming WEM files
-- Generate `missing_wem_files.csv` to record unused WEM files (complement set)
+The generated `.txtp` files land in `Extracted_Banks\txtp\`.
 
-### Step 5: Analyze Unused WEM Files (Optional)
+> This step needs Python 3.x on `PATH`. It used to require opening wwiser manually and clicking "Generate TXTP".
 
-Run the `link_unused_wem.py` script to analyze the origin of unused WEM files:
+### ③ Build Audio Mapping
 
-```bash
-cd d:\Odradek-wwise-namer
-python pyscript\link_unused_wem.py
-```
+Click **"③ Build Audio Mapping"**. It parses all JSON and TXTP files and produces `sound_wem_mapping_export.json`:
 
-This script will:
-- Read `missing_wem_files.csv` (list of unused WEM files)
-- Parse `banks.xml` to find which banks contain these WEM files
-- Parse `WwiseID` directory to find corresponding WwiseID
-- Parse `WemRes` directory to find original WwiseWemResource files
-- Generate `unused_wem_with_banks.csv` with complete association information
+- Associates GraphSoundResource / GraphProgramResource / NodeConstantsResource / WwiseID
+- Records missing WEM files to `missing_wem_files.csv`
+- Read-only, very fast
 
-**Output Format**:
+### ④ Export Audio from Mapping
 
-| Field | Description |
-|-------|-------------|
-| WemID | ID of the WEM file |
-| FoundInWemRes | Whether found in WemRes |
-| WemResCoord | WemRes coordinate (e.g., `2:878`) |
-| FoundInBanks | Whether found in banks.xml |
-| Banks | List of bank files containing this WEM |
-| BankIDs | dwSoundBankID of the banks |
-| FoundInWwiseID | Whether found in WwiseID |
-| WwiseIDCoord | WwiseID coordinate |
+Click **"④ Export Audio from Mapping"**. It exports WAV files from the mapping table already built:
 
-#### Script Configuration
+- Skips the repeated JSON parsing
+- Decoded by vgmstream, with resume support (progress is kept in `export_progress.json`)
+- Defaults to `<project root>\Exported_Audio`, changeable in the path settings
 
-In `export_sounds.py`, you can modify the following configurations:
+### Export WEM audio (~10 GB)
 
-```python
-BASE_DIR = Path(r"D:\Odradek-wwise-namer")          # Project root directory
-WEM_RES_WEM_DIR = BASE_DIR / "WemResWem"             # Streaming WEM files (exported as .wem)
-WEM_RES_DIR = BASE_DIR / "WemRes"                    # WwiseWemResource JSON files
-OUTPUT_DIR = Path(r"G:\ds2_unpack\wems\Exported_Audio")  # Export directory
-VGMSTREAM_CLI = Path(r"E:\下载\odradek\vgmstream-r2083\vgmstream-cli.exe")  # vgmstream path
-```
+Click **"Export WEM audio (~10GB)"**.
 
-#### Command Line Arguments
+- Pulls the raw bytes out of every `WwiseWemResource`: streaming ones are read through the `StreamingDataSource` Locator from the package files, embedded ones from `WemData`
+- The extracted bytes are **byte-identical** to the existing `.wem` files (header is `RIFF....WAVEfmt `)
+- **About 10 GB** — clicking the button pops up a warning and asks where to save ("Yes" = the default folder from the config, "No" = pick a folder, "Cancel" = abort)
+- Also incremental: `.wem` files already present in the target folder are skipped
 
-The script supports command line arguments to control processing mode:
+### Analyze Unused WEM (optional)
 
-```bash
-# Phase 1: Build mapping only
-python pyscript\export_sounds.py 1
+Click **"Analyze Unused WEM"**. The app will:
 
-# Phase 2: Export audio based on existing mapping
-python pyscript\export_sounds.py 2
+- Read `missing_wem_files.csv` (the list of unused WEM files)
+- Parse `banks.xml` to find which banks contain these WEMs
+- Parse the `WwiseID` folder for the corresponding WwiseIDs
+- Parse the `WemResJson` folder for the original WwiseWemResource files
+- Produce `unused_wem_with_banks.csv`, format described in [Format of unused_wem_with_banks.csv](#format-of-unused_wem_with_bankscsv)
 
-# Build mapping then export audio (one-click complete)
-python pyscript\export_sounds.py 12
-```
+You must set the **Streaming WEM folder** first, otherwise the app **fails with an error** instead of writing a pile of empty paths.
 
-When run without arguments, the script enters **interactive mode** and prompts you to select an operation.
+### Label Audio
 
-#### Two-Phase Processing
+Switch to the **"Label Audio"** tab and click **"Open CSV..."** to load `unused_wem_with_banks.csv`. This tab provides:
 
-The script uses a two-phase processing architecture for better efficiency:
-
-- **Phase 1 (Build Mapping)**: Parse all JSON and TXTP files, generate `sound_wem_mapping_export.json`
-  - Read-only, very fast
-  - Generate detailed mapping table with all audio source information
-  - Record missing WEM files to `missing_wem_files.csv`
-
-- **Phase 2 (Export)**: Export audio directly based on the mapping table
-  - Skip repetitive JSON parsing
-  - Focus on audio export with resume support
-  - Automatically record export progress to `export_progress.json`
-
-### Step 6: Label Unused WEM Files (WemLabeler)
-
-Use WemLabeler to label the `unused_wem_with_banks.csv` generated in Step 5:
-
-```bash
-cd d:\Odradek-wwise-namer
-# Run WemLabeler.exe directly, or launch via dotnet run
-dotnet run --project WemLabeler
-```
-
-This tool provides:
-- File list with CSV loading and auto-save
+- A file list on the left; labels are **written back into the CSV you opened** automatically
 - Real-time WEM audio preview (vgmstream decode + WASAPI playback)
-- **One-click playback of the txtp that owns a WEM**: select an entry and click
-  "Play owning txtp" (or press `Ctrl+T`); the app reverse-looks-up the txtp referencing that
-  WemID and plays it as audio, with **no manual drag-and-drop required**. If several txtp
-  reference the same WEM a picker appears. The original drag-and-drop and
-  "Open Txtp Preview" routes are still available
-- Built-in audio pipeline (`Extract Audio` tab): BNK extraction, mapping build, audio export,
-  export by event ID, unused WEM analysis
+- **One-click playback of the txtp that owns a WEM**: select an entry and click "Play owning txtp" (or press `Ctrl+T`); the app reverse-looks-up the txtp referencing that WemID and plays it, with **no manual drag-and-drop required**. If several txtp reference it, a picker appears
+- **"Open audio folder"**: jumps straight to the folder containing the selected WEM
 - Waveform visualization with click-to-seek
-- Batch export of labeled WAV files (using labels as filenames)
+- **"Export labels CSV..."** saves a copy of the labeling result; **"Export labeled WAV..."** batch-exports the labeled WAVs (named after the labels)
 - Chinese / English UI switching
 
-For detailed usage, see [WemLabeler/README.md](WemLabeler/README.md).
+### Other buttons
+
+| Button | Purpose |
+| --- | --- |
+| Rebuild Txtp Index | Rebuilds the WemID → txtp index after the txtp folder changes |
+| Export by Event ID | Enter an Event ID and export the audio it references (cached in `wem_map_cache.json`) |
+
+## Path Settings
+
+Every path at the top of the **Extract Audio** tab **can be typed in directly**; edits are written back to `config.json` immediately, so clicking "Browse..." is optional.
+
+| Path | Description |
+| --- | --- |
+| Project root | Everything else is derived from it |
+| Audio output folder | Where ④ writes the WAV files |
+| Streaming WEM folder | Where the `.wem` files live (the `WemPath` column depends on it) |
+| txtp folder | Defaults to `<project root>\Extracted_Banks\txtp` |
+| vgmstream | A manually set path wins, otherwise the one in `utils\` next to the exe |
+| Game root | Input for the asset export, the folder containing `DS2.exe` |
+| WEM audio folder | Output location for "Export WEM audio" |
+
+- **"Browse..."** uses .NET 8+ `OpenFolderDialog` — the standard Explorer-style dialog (address bar, navigation pane, search box), not the legacy tree dialog
+- **"Auto-find"** is available for the game root
+- **The project root is auto-detected**: a folder counts as a hit if it contains any of `GraphSoundRes` / `BankRes` / `WemResJson` / `Extracted_Banks`. If detection fails, the app asks you to pick one once and remembers it
+
+## Format of unused_wem_with_banks.csv
+
+Base columns (**the uninformative `IsStreaming` has been dropped**):
+
+```
+WemID,Coord,JsonFile,WemFile,WemPath,FoundInBankRes,TxtpFiles
+```
+
+| Field | Description |
+| --- | --- |
+| WemID | ID of the WEM file |
+| Coord | WemRes coordinate (e.g. `1604:4570`) |
+| JsonFile | Matching WwiseWemResource JSON filename |
+| WemFile | WEM filename |
+| WemPath | Full path of the WEM file (depends on a correct **Streaming WEM folder**) |
+| FoundInBankRes | Whether referenced by BankRes `WemIDs` (是 / 否) |
+| TxtpFiles | txtp files referencing this WEM, separated by `;` |
+
+Regenerating it never loses information:
+
+- **Every column other than the base columns and the dropped one (`IsStreaming`) is carried over as-is, matched by WemID** — the `Label` / `Duration` / `Channel` columns, or any column you added yourself
+- Rows in the old file that are **no longer "unused" are carried over whole, at the end of the file**, labels included
+- The log reports how many of each were carried over
+
+## Original Python Scripts (Reference)
+
+The 7 scripts under `pyscript/` are kept; this project started with them. They read and write exactly the same file formats as WemLabeler, so the two can be mixed — but they are **no longer the main path**; the buttons below are.
+
+| WemLabeler button | Equivalent script |
+| --- | --- |
+| ⓪ Export assets (read game files) | — (new; replaces the manual Odradek export) |
+| ① Extract BNK from BankRes | `extract_bnk_from_json.py` |
+| ② Generate TXTP with wwiser | the manual "Generate TXTP" click in wwiser |
+| ③ Build Audio Mapping | `export_sounds.py 1` |
+| ④ Export Audio from Mapping | `export_sounds.py 2` |
+| Export by Event ID | `export_by_id.py` |
+| Analyze Unused WEM | `link_unused_wem.py` |
+
+The remaining scripts: `build_audio_manifest.py` (build an audio manifest), `fix_negative_ids.py` (fix negative IDs in JSON), `match.py` (recover original names by audio-content MD5).
+
+> Those scripts still contain hard-coded paths (e.g. `BASE_DIR`); edit them if you want to use them. They run from the project
+> root, e.g. `cd <project root>` then `python pyscript\extract_bnk_from_json.py`
+> (`extract_bnk_from_json.py` uses the relative path `./BankRes`).
 
 ## Project Structure
 
 ```
 Odradek-wwise-namer/
-├── WemResWem/            # WwiseWemResource .wem files (named by coordinates)
-├── WemRes/               # WwiseWemResource JSON files
-├── BankRes/              # WwiseBankResource JSON files
-├── Extracted_Banks/      # Extracted BNK files
-│   ├── txtp/             # TXTP files generated by wwiser
-│   └── banks.xml         # Bank information generated by wwiser
-├── GraphSoundRes/        # GraphSoundResource JSON files
-├── GraphPgmRes/          # GraphProgramResource JSON files
-├── NodeConstRes/         # NodeConstantsResource JSON files
-├── WwiseID/              # WwiseID JSON files
-├── pyscript/             # Original Python scripts (functionality migrated into WemLabeler)
-│   ├── extract_bnk_from_json.py  # BNK extraction
-│   ├── export_sounds.py          # Main audio export script (phase 1 / phase 2)
-│   ├── export_by_id.py           # Export by Event ID
-│   ├── link_unused_wem.py        # Analyze origin of unused WEM files
-│   ├── build_audio_manifest.py   # Build audio resource manifest
-│   ├── fix_negative_ids.py       # Fix negative IDs in JSON
-│   └── match.py                  # Recover original names by audio-content MD5
-├── WemLabeler/           # WEM labeling tool + audio pipeline (WPF)
-│   ├── MainWindow.xaml   # Main window layout
-│   ├── MainWindow.xaml.cs# Main logic (playback, labeling, export)
-│   ├── MainWindow.Extract.cs # Extract Audio tab (pipeline) + "play owning txtp"
-│   ├── PipelineWindow.xaml   # Pipeline progress / log window
-│   ├── ExportByIdWindow.xaml # Input dialog for export by event ID
-│   ├── TxtpPickerWindow.xaml # Chooser when several txtp own one WEM
-│   ├── Pipeline/         # Audio pipeline migrated from the Python scripts
-│   │   ├── AudioPipeline.cs          # BNK extraction + index builders
-│   │   ├── AudioPipeline.Mapping.cs  # Mapping build
-│   │   ├── AudioPipeline.Export.cs   # Audio export / export by ID / unused WEM
-│   │   ├── PipelinePaths.cs          # Directory layout + auto-detection
-│   │   ├── PipelineModels.cs         # Data models
-│   │   └── TxtpRepository.cs         # Txtp index: WemID → owning txtp
-│   ├── WemEntry.cs       # Data model
-│   ├── Locale.cs         # i18n manager
-│   ├── ConfigManager.cs  # Config read/write
-│   ├── locales/          # Language files (zh-CN / en-US)
-│   └── README.md         # Tool usage guide
-└── README_EN.md          # This file
+├── OdradekSharp/            # C# reader that reads Decima game files directly (line-by-line port of Odradek)
+│   ├── Data/                # types.json (8.24 MB) + extensions.json — type schema, required at runtime
+│   ├── Ds2/                 # streaming graph, object reader, facade (DecimaGame)
+│   ├── Rtti/                # type table, deserialization, the 14 DS2 callbacks
+│   ├── Io/                  # DSAR container + LZ4 + little-endian reader / murmur3 / CRC-32C
+│   ├── Export/              # JSON export, byte-identical to Odradek
+│   └── Program.cs           # standalone CLI (info / types / find / read / dump / hex), for debugging
+├── WemLabeler/              # WPF app: Extract Audio + Label Audio
+│   ├── MainWindow.xaml      # layout of the two tabs
+│   ├── MainWindow.xaml.cs   # labeling tab logic (playback / labeling / export)
+│   ├── MainWindow.Extract.cs# extract tab logic (pipeline, asset export, WEM extraction)
+│   ├── TxtpPickerWindow.xaml# chooser when several txtp own one WEM
+│   ├── WemEntry.cs          # data model
+│   ├── Locale.cs            # i18n
+│   ├── ConfigManager.cs     # config read/write
+│   ├── Program.cs           # entry point (WPF)
+│   ├── locales/             # language files (zh-CN / en-US)
+│   ├── Pipeline/            # audio pipeline (migrated from the Python scripts)
+│   │   ├── OdradekExporter.cs       # 0. direct game-file export + WEM audio extraction
+│   │   ├── AudioPipeline.cs         # BNK extraction + index builders
+│   │   ├── AudioPipeline.Mapping.cs # mapping build
+│   │   ├── AudioPipeline.Export.cs  # audio export / export by ID / unused WEM
+│   │   ├── WwiserRunner.cs          # invokes wwiser to generate TXTP
+│   │   ├── ToolLocator.cs           # locate and download vgmstream / wwiser
+│   │   ├── TxtpRepository.cs        # txtp index: WemID → owning txtp
+│   │   ├── PipelinePaths.cs         # directory layout + auto-detection
+│   │   └── PipelineModels.cs        # data models
+│   └── README.md            # detailed WemLabeler usage guide
+├── pyscript/                # original Python scripts (reference, not the main path)
+├── Extracted_Banks/         # ① writes the .bnk files here; txtp/ is ②'s output; banks.xml comes from wwiser
+├── WemResJson/              # 0. output: WwiseWemResource JSON
+├── BankRes/                 # 0. output: WwiseBankResource JSON
+├── GraphSoundRes/           # 0. output: GraphSoundResource JSON
+├── GraphPgmRes/             # 0. output: GraphProgramResource JSON
+├── NodeConstRes/            # 0. output: NodeConstantsResource JSON
+├── WwiseID/                 # 0. output: WwiseID JSON
+├── utils/                   # only holds two_repos.txt (the external tools are NOT here, see above)
+├── .github/workflows/build.yml  # CI: single-file win-x64 publish
+└── README_EN.md             # this file
 ```
+
+`Exported_Audio/` (④'s output) and `WemResWem/` (Streaming WEM, default location) are **derived from the project root**
+and therefore not in the tree above — their locations can be moved elsewhere in the path settings (e.g. onto a drive with more space).
 
 ## Output Files
 
-After running the script, the following files will be generated:
+### From ⓪ Export assets
 
-### From `export_sounds.py`
 | File | Description |
-|------|-------------|
-| `sound_wem_mapping_export.json` | Audio mapping table with all resource and audio source associations |
-| `export_progress.json` | Export progress for resume support |
-| `streaming_wem_map.csv` | Missing Streaming WEM files record |
-| `missing_wem_files.csv` | **List of unused WEM files** (complement set) |
-| `mapping_build.log` | Detailed log of mapping build process |
+| --- | --- |
+| `WemResJson\WwiseWemResource_*.json` | WwiseWemResource (see also "Export WEM audio") |
+| `BankRes\WwiseBankResource_*.json` | WwiseBankResource |
+| `GraphSoundRes\GraphSoundResource_*.json` | GraphSoundResource |
+| `GraphPgmRes\GraphProgramResource_*.json` | GraphProgramResource |
+| `NodeConstRes\NodeConstantsResource_*.json` | NodeConstantsResource |
+| `WwiseID\WwiseID_*.json` | WwiseID |
 
-### From `link_unused_wem.py`
-| File | Description |
-|------|-------------|
-| `unused_wem_with_banks.csv` | Complete origin information for unused WEM files, including WemRes coordinates, bank information, and WwiseID associations |
+### From ① ② ③ ④
 
-### From WemLabeler
 | File | Description |
-|------|-------------|
-| `labeled_wem_files.csv` | Labeled CSV result, containing all WEM files with their Label field |
-| `config.json` | Tool configuration file (vgmstream path, project root, output folder, language, etc.) |
-| `logs/vgmstream_YYYYMMDD.log` | vgmstream decode logs |
-| `wem_map_cache.json` | WEM index cache used by "Export Audio by Event ID" |
+| --- | --- |
+| `Extracted_Banks\*.bnk` | ① extracted Wwise Banks |
+| `Extracted_Banks\txtp\*.txtp` | ② TXTP files generated by wwiser |
+| `sound_wem_mapping_export.json` | ③ audio mapping table with all resource/audio-source associations |
+| `missing_wem_files.csv` | ③ list of unused WEM files (complement set) |
+| `streaming_wem_map.csv` | ③ record of missing Streaming WEM files |
+| `mapping_build.log` | ③ detailed log of the mapping build |
+| `export_progress.json` | ④ export progress, supports resuming |
+| `Exported_Audio\*.wav` | ④ exported WAV files (default location) |
+
+### From Analyze Unused WEM / Export by Event ID
+
+| File | Description |
+| --- | --- |
+| `unused_wem_with_banks.csv` | Complete origin information for unused WEM files (format above) |
+| `wem_map_cache.json` | WEM index cache used by "Export by Event ID" |
+
+### From the WemLabeler labeling tab
+
+Labels are **written back into the CSV you opened** (adding/updating the `Label`, `Duration` and `Channel` columns);
+no copy with a fixed filename is produced. Use **"Export labels CSV..."** to save a copy wherever you want.
+
+| File | Description |
+| --- | --- |
+| `config.json` | Tool configuration (paths, language, vgmstream path, ...), next to the exe |
+| `logs\vgmstream_YYYYMMDD.log` | Startup and decode logs |
+
+## Data Scale Reference
+
+| Item | Size |
+| --- | --- |
+| `Extracted_Banks` | 74 `.bnk` files, about 1 GB |
+| `Extracted_Banks\banks.xml` | 515 MB |
+| `Extracted_Banks\txtp` | about 11,715 files |
+| `unused_wem_with_banks.csv` | 5,951 rows |
+| Raw WEM audio | about 10 GB |
+
+## Building
+
+```bash
+dotnet build WemLabeler/WemLabeler.csproj
+```
+
+CI is in [.github/workflows/build.yml](.github/workflows/build.yml): on a push touching `WemLabeler/**` it does a
+single-file win-x64 (non self-contained) publish with .NET 10 and uploads the artifact.
+
+> **The published output must contain `Data\types.json`** (and `extensions.json`).
+> `WemLabeler.csproj` already copies both from `OdradekSharp/Data/` into the output folder — don't remove that when editing the project file.
+
+### Why `OdradekSharp/Data/types.json` is committed
+
+It is a **byte-for-byte copy** of `odradek-game-ds2/src/main/resources/types.json` from Odradek's own repository, and it is
+**not generated by any build step**: it defines every class's fields, offsets and read order, and without it not a single byte can be decoded.
+
+So it has to be committed (`utils/` is gitignored, so a CI checkout has no other way to obtain it).
+It is 8.24 MB in the working tree, but git stores it deflated at **only about 1 MB**.
+
+## Known Limitations
+
+- **Unported callbacks**: groups containing `PhysicsShapeResource` / `PhysicsRagdollResource` (Jolt) and
+  `FacialRigSettingWithLODResource` (RigLogic) fail to read as a whole because those callbacks are not ported.
+  There is a fallback now: **retry without reading subgroups**, which still exports the target objects at the cost of
+  pointers inside those subgroups staying unresolved (they degrade to an unresolved `<ref>`).
+- **Derived types are not exported by default**: `WwiseWemLocalizedResource` (268 objects, a derived type of
+  `WwiseWemResource`) is **not exported** by default (`OdradekExporter.IncludeDerivedTypes = false`). Two reasons: it matches
+  the original Odradek export, and those localization groups take several GB of RAM to read. Enabling it also requires
+  changing the `WwiseWemResource_*.json` matching in the pipeline.
+- **The first full export is slow**: with no existing files it reads about 2,600 groups in sequence (exactly the work the
+  manual Odradek GUI export used to do). GC runs per group now, but allow some time.
+- **Game updates**: types and object indices come from the game itself, so re-run the asset export after the game updates.
 
 ## Notes
 
-- Ensure all JSON resource files are correctly exported, otherwise scripts may fail to find corresponding references
-- vgmstream path needs to be modified according to your actual setup (WemLabeler: **File → Set vgmstream Path**)
-- Export process may take a long time, script supports resuming from interruption (via `export_progress.json`)
-- Streaming type WEM files need to exist in `WemResWem` directory (exported by Odradek), filenames follow `WwiseWemResource_{group}_{index}.wem` format
-- If some WEM files are missing, check `missing_wem_files.csv` for details
-- WemLabeler's `Extract Audio` tab produces byte/row-identical output to the Python scripts (verified), so the
-  two can be used interchangeably. `unused_wem_with_banks.csv` gains `Label,Duration,Channel` columns
-  written by WemLabeler; regenerating it drops those columns, so label first and back up if needed
+- Both the asset export and "Export WEM audio" depend on a correct **game root** (containing `DS2.exe`)
+- Both the `WemPath` column and "Export WEM audio" depend on a correct **Streaming WEM folder**; if that folder does not exist the app fails with an error
+- Raw WEM audio is about 10 GB — check the target drive's free space first
+- Exporting can take a long time; ③ and ④ both support resuming
+- WemLabeler's Extract Audio tab produces output identical to the Python scripts (verified byte/row by row), so the two can be used interchangeably
 
 ## Credits
 

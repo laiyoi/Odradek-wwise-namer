@@ -199,7 +199,8 @@ chunk[i] @ 32+32*i:  i64 offset(解压后逻辑偏移, 首项=0, 连续) | i64 c
 `ShaderResource`（`i32 size` + `GGUUID` + `GGUUID` + `StreamingDataSource(9B)`）、
 `Texture`（16 字节头 + `MurmurHashValue(16)` + `totalSize/embeddedSize/streamedSize/streamedMips` + **`totalSize − 12`** 字节）、
 `TextureList`、`UITexture`、`UITextureFrames`、`VertexArrayResource`、`ZivaRTResource`、
-以及 **未移植**的 `FacialRigSettingWithLODResource`（RigLogic）、`PhysicsRagdollResource` / `PhysicsShapeResource`（Jolt）。
+`PhysicsShapeResource`（`Rtti/Jolt.cs`，含 12 种 Jolt shape 的字节布局）、
+以及 **未移植**的 `FacialRigSettingWithLODResource`（RigLogic）、`PhysicsRagdollResource`（Jolt ragdoll/constraints）。
 
 ---
 
@@ -251,7 +252,7 @@ dotnet run -- info   "<gameDir>"                        # 图统计（groups/typ
 dotnet run -- types  "<gameDir>" --filter Wwise          # 图上出现过的类型名 + 数量
 dotnet run -- find   "<gameDir>" WwiseWemResource --limit 20
 dotnet run -- read   "<gameDir>" 1604:2556 --json --out out.json
-dotnet run -- dump   "<gameDir>" WwiseWemResource --out outdir --limit 500 --exact
+dotnet run -- dump   "<gameDir>" WwiseWemResource --out outdir --exact --no-subgroups --threads 16
 dotnet run -- group  "<gameDir>" 5206                    # 组内对象类型清单（仅元数据）
 dotnet run -- trace  "<gameDir>" 5206 --no-subgroups     # 逐对象字节区间（调试定位）
 dotnet run -- hex    "<gameDir>" "cache:package/package.00.00.core" <offset> <len>
@@ -263,6 +264,59 @@ dotnet run -- hex    "<gameDir>" "cache:package/package.00.00.core" <offset> <le
 types in graph : 5354196      groups: 79323      files: 241
 link table     : 30229145 bytes               root objects: 50517
 ```
+
+### 5.1 导出性能（实测，本机 DS2）
+
+**对象表示优化前后（关键：原始类型容器不再是逐元素装箱的 `List<object?>`）**
+
+| 场景 | 优化前 | 优化后 | odradek |
+|---|---|---|---|
+| `read 499:1173`（group 499 = 124,219 个对象 / 286 MB span，物化全部载荷） | 36.1 s | **1.2 s** | 4.2 s |
+| `dump` 400 个（4 线程，跳子组） | ~110 s | **7.3 s** | — |
+| 全量 7,838 个 `WwiseWemResource` | 30 s（已走跳载荷路径） | **29.5 s** | — |
+| 全量导出峰值内存 | 6.3 GB（更早版本 20.9 GB） | **4.8 GB** | — |
+
+正确性：400/400、**7,816/7,816 与 odradek 逐字节相同**（未导出的 22 个卡在 2 个未移植回调）。
+
+**已做的优化**
+
+1. **原始类型容器 → typed array + 块拷贝**（对齐 odradek `AbstractTypeReader.AtomReader` 的数组重载）：
+   `byte[]/short[]/int[]/long[]/float[]/double[]`、`Half→float[]`、`bool[]`、`char[]`。
+   此前是 `List<object?>` 逐元素装箱 —— 一个 100 万元素的顶点数组就是 100 万次装箱，这是 36s vs 4.2s 的主因。
+2. **按类型缓存 `MsgReadBinary` 回调名与 `IsStreamingDataSource`**：原先每个 compound 实例都要递归基类链、扫 `messages` 列表、做一次字符串比较。
+3. 表驱动 CRC-32C（逐位版本实测只占 ~3%，仍保留）。
+4. **不需要的对象边解析边丢**（`wanted` 过滤 + `resolveLinks=false` 时），而不是整组读完再丢 —— 峰值 6.3 GB → 4.8 GB。
+
+**更早的优化（仍然有效）**
+
+5. **`Io/FileStore`：归档文件只挂载一次**（对应 odradek 的 `StreamingGraphStorage.mountAll`）。此前每读一个 span 就重开 DSAR，重解析 6 万字节 chunk 表 —— 最初 >200× 差距的来源。
+6. **chunk 解压缓存 1 块**；**span 分窗读取**（8 MB 窗口，跨窗对象重解析）。
+7. **`dump`/`TypeExporter` 按组遍历**：先只读元数据筛组，再每组读一次、写出组内匹配对象。
+8. **`--no-subgroups` 但 locator 仍解析**（locator 是组局部的），无指针类型输出与 odradek 逐字节一致。
+9. **`--threads`（默认 min(4,CPU)）+ `MemoryGate`**：按 span 字节数限制在飞的组，内存与线程数解耦。
+10. **组内截断容错**：某对象因未实现回调读不下去时保留其之前的对象，并打印该组被截断。
+11. **Jolt shape 回调已移植**（`Rtti/Jolt.cs`）。
+
+### 5.2 输出正确性验证
+
+与 odradek 自己导出的文件**逐字节比较**（`utils\_verify*.ps1`，六类各一批）：
+
+| 类型 | 导出目录 | 结果 |
+|---|---|---|
+| `WwiseWemResource` | `WemResJson/` | 20/20、400/400 全等 |
+| `GraphSoundResource` | `GraphSoundRes/` | 20/20 全等 |
+| `WwiseBankResource` | `BankRes/` | 20/20 全等 |
+| `WwiseID` | `WwiseID/` | 20/20 全等 |
+| `GraphProgramResource` | `GraphPgmRes/` | 20/20 全等 |
+| `NodeConstantsResource` | `NodeConstRes/` | 20/20 全等 |
+
+调试这个比对时修掉的三个**只在导出路径**（跳载荷）出现的问题：
+
+1. **指针全部变成 null**：`--no-subgroups` 时早退不解析指针 → 含引用的类型（GraphSound/GraphProgram/NodeConstants/Bank）整行字段缺失。
+   修正：目标组的 **id 从组元数据 `SubGroups` 就能拿到**，link 里有 index，所以 `<ref to G:I>` **不需要读子组**也能解析；现在 `ResolveLink` 在未读子组时也返回 `ObjectRef`（只是 `Target` 为 null）。
+2. **指针字符串格式**：必须复刻 odradek 的记录类 `toString()` —— `Ref` → `<ref to G:I>`、`StreamingRef` → `<streaming ref to G:I>`、`WeakPtr` → `<weak ptr to G:I>`、`UUIDRef` → `<uuid ref to <guid>>`。（`cptr` 在 odradek 里没重写 `toString()`，会打印 Java 对象身份串，无法复刻，用 `<cptr to G:I>` 代替。）
+3. **组内被丢弃的对象仍被引用**：为省内存我把不需要的对象置 `null`，但同组其它对象可能指向它 → 引用变 null。
+   修正：改为置**只保留类型的 stub**（丢弃载荷、保留身份），引用照常解析。
 
 ---
 
@@ -280,10 +334,10 @@ link table     : 30229145 bytes               root objects: 50517
 
 **后续要做的（按价值排序）**
 
-1. **补 3 个回调**：`PhysicsShapeResource` / `PhysicsRagdollResource`（Jolt 二进制）、`FacialRigSettingWithLODResource`（RigLogic）。目前实现用"子组降级跳过"绕过，能读目标对象，但会丢这些子组内的指针。
+1. **补 2 个回调**：`PhysicsRagdollResource`（Jolt ragdoll/constraints，约 200 行）、`FacialRigSettingWithLODResource`（RigLogic）。目前组内截断容错可保住失败点之前的对象，但失败点之后的对象读不到。
 2. **Converter**：`Texture`/`TextureSet` → DDS/PNG（含 BCn 解压、tile 重排）、`WwiseWemResource` → WEM/WAV（RIFF 解析 + vgmstream 转码）、`Scene/Animation` → CAST。odradek 对应文件在 `odradek-game-ds2/.../converters/**` 与 `odradek-export-*/`。
 3. **定长容器宏**（`uint32_4`、`Vec4_3`、`float_*_COUNT`）与 `Texture.StreamingMipOffsets` 的真实布局 —— 见第 7 节 `[UNVERIFIED]`。
-4. 可选：把 `RttiReader` 改成"惰性读取"以加速大范围 dump（目前是整组读）。
+4. 可选：进一步提速 —— 目前读一个组必须顺序解出组内所有对象才能定位到目标对象，可以按"目标对象在组内的下标区间"跳过前面对象（用类型表推算不了，但可以缓存已读组的有效前缀）。
 
 ---
 
