@@ -6,6 +6,13 @@
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- OdradekSharp 是独立 CLI（OutputType=Exe），这里只引用它的 DLL。
+         用 RID 发布（CI 里的 win-x64）时，SDK 的 ValidateExecutableReferences 会认为
+         「被引用的可执行文件是自包含的、而本项目不是」并报 NETSDK1151。
+         两边其实都是框架依赖（SelfContained=false），只是 RID 让检查误判，所以关掉该校验。
+         这是 SDK 自带的开关（见 Microsoft.NET.Sdk.targets 的 ValidateExecutableReferences 目标）。 -->
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
   </PropertyGroup>
 
   <ItemGroup>

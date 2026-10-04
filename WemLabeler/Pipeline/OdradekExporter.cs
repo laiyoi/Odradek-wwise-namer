@@ -157,10 +157,9 @@ public static class OdradekExporter
     {
         public override string ToString() => $"新写 {Written:N0} / 跳过 {Skipped:N0} / 失败 {Failed:N0}";
     }
-
     /// <summary>
-    /// 按类型把对象导出成 JSON，落到 <c>&lt;BaseDir&gt;\&lt;类型目录&gt;\&lt;类型&gt;_&lt;组&gt;_&lt;下标&gt;.json</c>。
-    /// 已存在的文件跳过，所以中断后重跑是增量的。
+    /// 按类型把对象导出成 JSON，落到 &lt;BaseDir&gt;\&lt;类型目录&gt;\&lt;类型&gt;_&lt;组&gt;_&lt;下标&gt;.json。
+    /// 已全部存在时整类跳过。
     /// </summary>
     public static ExportSummary ExportJson(string gameRoot, PipelinePaths paths,
         IProgress<PipelineProgress>? progress, Action<string>? log, CancellationToken ct)
@@ -175,7 +174,7 @@ public static class OdradekExporter
             $"图: {game.Graph.Groups.Count:N0} 个组, {game.Graph.TypeTable.Count:N0} 个类型表项, {game.Graph.Files.Count:N0} 个文件");
         AudioPipeline.SafeLog(log, "");
 
-        int written = 0, skipped = 0, failed = 0, groupsDone = 0;
+        int written = 0, skipped = 0, failed = 0, groups = 0;
 
         foreach (var (typeName, folder) in TargetTypes)
         {
@@ -183,68 +182,43 @@ public static class OdradekExporter
             var dir = Path.Combine(paths.BaseDir, folder);
             Directory.CreateDirectory(dir);
 
-            // 先纯元数据收集（零反序列化），按组归拢好让每组只读一次
-            var byGroup = new Dictionary<int, List<(int Index, string TypeName)>>();
-            foreach (var (id, type) in game.FindObjects(typeName, IncludeDerivedTypes))
+            // 纯元数据数一遍（不读任何对象字节），用于「本地都已有 → 整类跳过」
+            var expected = 0;
+            foreach (var _ in game.FindObjects(typeName, IncludeDerivedTypes)) expected++;
+            var have = Directory.GetFiles(dir, "*.json").Length;
+            if (expected > 0 && have >= expected)
             {
-                if (!byGroup.TryGetValue(id.GroupId, out var list))
-                    byGroup[id.GroupId] = list = new List<(int, string)>();
-                list.Add((id.ObjectIndex, type.Name));
+                skipped += expected;
+                AudioPipeline.SafeLog(log, $"{typeName}: 已有 {have:N0} 个，跳过");
+                continue;
             }
 
-            var objectCount = byGroup.Sum(kv => kv.Value.Count);
-            AudioPipeline.SafeLog(log, $"{typeName}: {objectCount:N0} 个对象，分布在 {byGroup.Count:N0} 个组");
+            AudioPipeline.SafeLog(log, $"{typeName}: 待导出 {expected:N0} 个 → {dir}");
+            AudioPipeline.Report(progress, $"{typeName}: 导出中...");
 
-            var typeWritten = 0;
-            foreach (var (groupId, items) in byGroup)
+            // 用库里的批量导出：先纯元数据找出「哪些组里有这个类型」，再每组只读一次（并行），
+            // 且只保留要写的对象。
+            // 关键 ReadSubgroups=false：不递归子组（locator 照样解析，输出仍与 odradek 一致）。
+            // 千万不能逐对象调 ReadObject —— 对象没有长度字段，读 1 个对象 = 顺序解析整组，
+            // group 499 有 12 万个对象，逐对象调就是「卡在 432 个、内存爆炸」的根源。
+            var report = TypeExporter.Export(game, typeName, new ExportOptions
             {
-                ct.ThrowIfCancellationRequested();
+                OutputDirectory = dir,
+                IncludeDerived = false,   // 等于 CLI 的 --exact（该选项默认 true，必须显式关掉）
+                ReadSubgroups = false,    // 不读子组：省内存，且不改变输出
+                Threads = Math.Min(4, Environment.ProcessorCount),
+            }, msg => AudioPipeline.SafeLog(log, "  " + msg));
 
-                var pending = items
-                    .Where(it => !File.Exists(Path.Combine(dir, $"{it.TypeName}_{groupId}_{it.Index}.json")))
-                    .ToList();
-                skipped += items.Count - pending.Count;
-                if (pending.Count == 0) continue;
+            written += report.Exported;
+            failed += Math.Max(0, report.Requested - report.Exported);
+            groups += report.GroupsRead;
 
-                var objects = ReadGroupWithFallback(game, groupId, log);
-                if (objects == null)
-                {
-                    failed += pending.Count;
-                    continue;
-                }
-
-                foreach (var (index, name) in pending)
-                {
-                    if (index < 0 || index >= objects.Count) { failed++; continue; }
-                    try
-                    {
-                        File.WriteAllText(Path.Combine(dir, $"{name}_{groupId}_{index}.json"),
-                            JsonExporter.Export(objects[index]));
-                        written++;
-                        typeWritten++;
-                    }
-                    catch (Exception ex)
-                    {
-                        failed++;
-                        AudioPipeline.SafeLog(log, $"  [!] {groupId}:{index} 导出失败: {ex.Message}");
-                    }
-                }
-
-                groupsDone++;
-
-                // 组可能很大（十几个 MB 的对象树），读完立刻回收，别让峰值累积
-                // （也不把 objects 留在作用域外）
-                objects.Clear();
-                objects = null!;
-                GC.Collect(2, GCCollectionMode.Forced, blocking: false);
-
-                AudioPipeline.Report(progress, $"{typeName}: {typeWritten:N0} 个（{groupsDone} 组）", groupsDone, 0);
-            }
-
-            AudioPipeline.SafeLog(log, $"  → 新写 {typeWritten:N0} 个");
+            foreach (var w in report.Warnings.Take(5)) AudioPipeline.SafeLog(log, "  [!] " + w);
+            AudioPipeline.SafeLog(log, $"  → {report}");
+            AudioPipeline.Report(progress, $"{typeName}: {report.Exported:N0} 个（{report.Seconds:F1}s）");
         }
 
-        var summary = new ExportSummary(written, skipped, failed, groupsDone);
+        var summary = new ExportSummary(written, skipped, failed, groups);
         AudioPipeline.SafeLog(log, "");
         AudioPipeline.SafeLog(log, $"完成: {summary}");
         return summary;
@@ -291,21 +265,32 @@ public static class OdradekExporter
             skipped += items.Count - pending.Count;
             if (pending.Count == 0) { done += items.Count; continue; }
 
-            var objects = ReadGroupWithFallback(game, groupId, log);
-            if (objects == null)
+            // 同上：只读需要的对象，别整组读（WEM 那些组同样可能极大）
+            var wanted = new HashSet<int>(pending.Count);
+            foreach (var (index, _) in pending) wanted.Add(index);
+
+            IReadOnlyList<TypedObject> objects;
+            try
+            {
+                objects = game.ReadGroupFiltered(groupId, wanted, false);   // 不读子组：group 499 有 2365 个子组
+            }
+            catch (Exception ex)
             {
                 failed += pending.Count;
                 done += items.Count;
+                AudioPipeline.SafeLog(log, $"  [!] 组 {groupId} 读取失败（跳过 {pending.Count} 个）: {ex.Message}");
                 continue;
             }
-
+            var valid = game.ValidObjectCount(groupId);
             foreach (var (index, name) in pending)
             {
                 done++;
-                if (index < 0 || index >= objects.Count) { failed++; continue; }
+                if (index < 0 || index >= valid || index >= objects.Count) { failed++; continue; }
+                var obj = objects[index];
+                if (obj is null) { failed++; continue; }
                 try
                 {
-                    var bytes = ExtractWemBytes(game, objects[index]);
+                    var bytes = ExtractWemBytes(game, obj);
                     if (bytes == null || bytes.Length == 0) { failed++; continue; }
                     File.WriteAllBytes(Path.Combine(targetDir, $"{name}_{groupId}_{index}.wem"), bytes);
                     written++;
@@ -319,46 +304,12 @@ public static class OdradekExporter
                 if ((done & 0x3F) == 0)
                     AudioPipeline.Report(progress, $"WEM: {done:N0} / {total:N0}（新写 {written:N0}）", done, total);
             }
-
-            objects.Clear();
-            objects = null!;
-            GC.Collect(2, GCCollectionMode.Forced, blocking: false);
+            game.ReleaseCaches();   // 每组读完全部放掉，别累积
         }
 
         AudioPipeline.SafeLog(log, "");
         AudioPipeline.SafeLog(log, $"WEM 完成: 新写 {written:N0} / 跳过 {skipped:N0} / 失败 {failed:N0}");
         return written;
-    }
-
-    /// <summary>
-    /// 读一个组；成功返回对象列表，失败返回 null（并记日志）。
-    ///
-    /// 带子组读会碰到**未移植的回调**（Jolt 的 PhysicsShapeResource /
-    /// PhysicsRagdollResource、RigLogic 的 FacialRigSettingWithLODResource），
-    /// 整组会直接抛异常。这时降级为「不读子组」再试一次 —— 目标对象本身还能读出来，
-    /// 代价是这些子组里的指针解析不到（会退化成未解析的 &lt;ref&gt;）。
-    /// </summary>
-    private static List<TypedObject>? ReadGroupWithFallback(DecimaGame game, int groupId, Action<string>? log)
-    {
-        // 不用 game.ReadObject / game.ReadGroup：那两个带整图缓存，大范围导出会把内存吃光
-        try
-        {
-            return game.Objects.ReadGroup(groupId, true).Objects;
-        }
-        catch (Exception ex)
-        {
-            try
-            {
-                var objects = game.Objects.ReadGroup(groupId, false).Objects;
-                AudioPipeline.SafeLog(log, $"  [~] 组 {groupId} 含未移植回调，已降级为不读子组（对象仍可导出）: {ex.Message}");
-                return objects;
-            }
-            catch (Exception ex2)
-            {
-                AudioPipeline.SafeLog(log, $"  [!] 组 {groupId} 读取失败，跳过: {ex2.Message}");
-                return null;
-            }
-        }
     }
 
     /// <summary>从一个 WwiseWemResource 取原始字节：优先 streaming 数据源，其次内嵌 WemData。</summary>
@@ -385,3 +336,4 @@ public static class OdradekExporter
         return null;
     }
 }
+

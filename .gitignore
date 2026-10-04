@@ -20,3 +20,5 @@ OdradekSharp/obj/
 *pyc
 utils/
 !utils/two_repos.txt
+dsh-coding-preset/
+/script.*

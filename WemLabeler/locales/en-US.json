@@ -22,8 +22,7 @@
   "gb_output": "Output",
   "lbl_path_basedir": "Project root:",
   "lbl_path_output": "Audio output folder:",
-  "lbl_path_wemreswem": "Streaming WEM folder:",
-  "lbl_path_txtp": "Txtp folder:",
+  "lbl_path_wemreswem": "WEM folder (read and written):",
   "lbl_path_vgmstream": "vgmstream:",
   "btn_browse": "Browse...",
   "btn_open": "Open",
@@ -241,24 +240,22 @@
   "status_basedir_set": "Project root set: {0}",
   "status_outputdir_set": "Audio output folder set: {0}",
   "status_wemreswemdir_set": "Streaming WEM folder set: {0}",
-  "status_txtpdir_set": "Txtp folder set: {0}",
   "status_path_missing": "Path does not exist: {0}",
 
   "dlg_set_basedir": "Select the project root (containing GraphSoundRes / WemResJson etc.)",
   "dlg_set_outputdir": "Select the audio output folder",
   "dlg_set_wemreswemdir": "Select the folder holding streaming .wem files",
-  "dlg_set_txtpdir": "Select the txtp folder",
   "dlg_export_by_id_invalid": "These values are not valid integers:\n{0}",
   "dlg_export_by_id_empty": "Please enter at least one target ID.",
   "dlg_txtp_pick_title": "Select the txtp to play",
   "dlg_txtp_pick_hint": "WemID {0} is referenced by {1} txtp files; pick one to play:",
   "dlg_reload_csv_after_tool": "Regenerated:\n{0}\n\nReload this CSV now?",
 
-  "about_text": "WEM Labeler v1.5 (WPF)\n\nA tool for labeling missing WEM audio files\nUses vgmstream for real-time audio preview\n\nSupports CSV with WemRes/Banks/WwiseID source info\nConfig file: config.json\nSupports Chinese/English switching\n\nBuilt-in audio pipeline (Tools menu, migrated from the Python scripts):\n  ① Extract BNK from BankRes\n  ② Build audio mapping  ③ Export audio from mapping\n  Export by Event ID / Analyze unused WEMs\n\nShortcuts:\n  ↑ ↓    Prev/Next file (auto-save)\n  Space  Play/Stop audio\n  Ctrl+T Play the txtp owning the current WEM\n  Ctrl+S Save current label\n  Enter  Save when in the label box",
+  "about_text": "WEM Labeler v1.6 (WPF)\n\nLabel missing WEM audio files\nLive preview via vgmstream\n\nConfig: config.json, UI supports Chinese/English\n\n\"Extract Audio\" tab (reads game files directly, no odradek.exe):\n  0. Export assets (reads streaming_graph.core)\n  Export WEM audio (~10GB)\n  1. Extract BNK from BankRes\n  2. Generate TXTP with wwiser\n  3. Build audio mapping\n  4. Export audio from mapping\n  Analyze unused WEM / Rebuild txtp index / Export by Event ID\n\nShortcuts:\n  Up/Down  previous/next file (auto-save)\n  Space    play/stop audio\n  Ctrl+T   play the txtp this WEM belongs to\n  Ctrl+S   save current label\n  Enter    save while focused in the label box",
   "about_title": "About",
   "btn_download_tools": "Download tools (vgmstream + wwiser)",
   "btn_open_utils": "Utils dir",
-  "dlg_python_missing": "No Python interpreter found.\n\nwwiser is a Python tool: install Python 3, or pick python.exe in the 'Python interpreter' field on the Extract Audio tab.",
+  "dlg_python_missing": "Python interpreter not found.\n\nStep 2 (generate TXTP with wwiser) needs Python; the app looks for python / py / python3 on PATH automatically. Please install Python and make sure it is on PATH.",
   "status_wwiser_running": "wwiser running... {0}",
   "pipe_download_target": "[*] Download target: {0}",
   "pipe_download_vgmstream_ok": "[Done] vgmstream → {0}",
@@ -305,20 +302,11 @@
   "pipe_link_carried_rows": "[*] {0} row(s) from the old file (no longer unused) were carried over as-is at the end of the file",
 
   "lbl_path_game_root": "Game root:",
-  "lbl_path_wem_audio": "WEM audio folder:",
-  "btn_odradek_export": "0. Export assets (odradek)",
   "btn_wem_audio_export": "Export WEM audio (~10GB)",
-  "dlg_set_game_root": "Select the game root folder (the -s value; where the game exe lives)",
   "dlg_wem_audio_title": "Export WEM audio",
   "dlg_wem_audio_size_warning": "Raw WEM audio is about 10 GB.\n\nDefault folder:\n{0}\n\nYes = use the default folder; No = pick another folder; Cancel = abort.",
   "dlg_wem_audio_choose": "Choose the WEM audio output folder",
   "status_need_game_root": "Game root is not set",
-  "status_dir_missing": "Folder does not exist",
-  "pipe_odradek_summary": "odradek export finished: {0} files classified / {1} objects requested ({2} from bounded exploration)",
-  "pipe_wem_audio_target": "WEM audio output folder: {0}",
-  "pipe_wem_audio_existing": "{0} .wem files already present; those will be skipped",
-  "pipe_wem_audio_count": "WEM files to export: {0}",
-  "pipe_wem_audio_summary": "WEM audio export finished: {0} files -> {1}",
 
 
 
@@ -327,6 +315,8 @@
   "status_game_found": "Found game: {0}",
   "pipe_odradek_summary": "Export finished: {0} written / {1} skipped / {2} failed",
   "pipe_wem_audio_summary": "WEM audio finished: {0} written -> {1}",
-  "btn_odradek_export": "0. Export assets (read game files)",
-  "dlg_set_game_root": "Select the DS2 game root (the folder containing DS2.exe)"
+  "btn_odradek_export": "⓪ Export assets (read game files)",
+  "dlg_set_game_root": "Select the DS2 game root (the folder containing DS2.exe)",
+
+  "hint_basedir_suspect": "Project root is set to {0}, but it contains none of GraphSoundRes / BankRes / WemResJson / Extracted_Banks - if a later step complains about missing data, this level is probably wrong."
 }

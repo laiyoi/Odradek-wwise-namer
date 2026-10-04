@@ -50,13 +50,11 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock x:Name="PathBaseDirLabel" Grid.Row="0" Grid.Column="0"
                                        VerticalAlignment="Center" Margin="0,0,8,4"/>
-                            <TextBox x:Name="PathBaseDirBox" Grid.Row="0" Grid.Column="1"
+                            <TextBox x:Name="PathBaseDirBox" LostFocus="PathBox_LostFocus" Grid.Row="0" Grid.Column="1"
                                      Margin="0,0,6,4" Padding="3,2" TextChanged="PathBox_TextChanged"/>
                             <Button x:Name="BtnBrowseBaseDir" Grid.Row="0" Grid.Column="2"
                                     Width="76" Margin="0,0,6,4" Click="BtnBrowseBaseDir_Click"/>
@@ -65,7 +63,7 @@
 
                             <TextBlock x:Name="PathOutputDirLabel" Grid.Row="1" Grid.Column="0"
                                        VerticalAlignment="Center" Margin="0,0,8,4"/>
-                            <TextBox x:Name="PathOutputDirBox" Grid.Row="1" Grid.Column="1"
+                            <TextBox x:Name="PathOutputDirBox" LostFocus="PathBox_LostFocus" Grid.Row="1" Grid.Column="1"
                                      Margin="0,0,6,4" Padding="3,2" TextChanged="PathBox_TextChanged"/>
                             <Button x:Name="BtnBrowseOutputDir" Grid.Row="1" Grid.Column="2"
                                     Width="76" Margin="0,0,6,4" Click="BtnBrowseOutputDir_Click"/>
@@ -74,49 +72,31 @@
 
                             <TextBlock x:Name="PathWemResWemLabel" Grid.Row="2" Grid.Column="0"
                                        VerticalAlignment="Center" Margin="0,0,8,4"/>
-                            <TextBox x:Name="PathWemResWemDirBox" Grid.Row="2" Grid.Column="1"
+                            <TextBox x:Name="PathWemResWemDirBox" LostFocus="PathBox_LostFocus" Grid.Row="2" Grid.Column="1"
                                      Margin="0,0,6,4" Padding="3,2" TextChanged="PathBox_TextChanged"/>
                             <Button x:Name="BtnBrowseWemResWemDir" Grid.Row="2" Grid.Column="2"
                                     Width="76" Margin="0,0,6,4" Click="BtnBrowseWemResWemDir_Click"/>
                             <Button x:Name="BtnOpenWemResWemDir" Grid.Row="2" Grid.Column="3"
                                     Width="76" Margin="0,0,0,4" Click="BtnOpenWemResWemDir_Click"/>
 
-                            <TextBlock x:Name="PathTxtpDirLabel" Grid.Row="3" Grid.Column="0"
+                            <TextBlock x:Name="PathVgmstreamLabel" Grid.Row="3" Grid.Column="0"
                                        VerticalAlignment="Center" Margin="0,0,8,4"/>
-                            <TextBox x:Name="PathTxtpDirBox" Grid.Row="3" Grid.Column="1"
+                            <TextBox x:Name="PathVgmstreamBox" LostFocus="PathBox_LostFocus" Grid.Row="3" Grid.Column="1"
                                      Margin="0,0,6,4" Padding="3,2" TextChanged="PathBox_TextChanged"/>
-                            <Button x:Name="BtnBrowseTxtpDir" Grid.Row="3" Grid.Column="2"
-                                    Width="76" Margin="0,0,6,4" Click="BtnBrowseTxtpDir_Click"/>
-                            <Button x:Name="BtnOpenTxtpDir" Grid.Row="3" Grid.Column="3"
-                                    Width="76" Margin="0,0,0,4" Click="BtnOpenTxtpDir_Click"/>
-
-                            <TextBlock x:Name="PathVgmstreamLabel" Grid.Row="4" Grid.Column="0"
-                                       VerticalAlignment="Center" Margin="0,0,8,4"/>
-                            <TextBox x:Name="PathVgmstreamBox" Grid.Row="4" Grid.Column="1"
-                                     Margin="0,0,6,4" Padding="3,2" TextChanged="PathBox_TextChanged"/>
-                            <Button x:Name="BtnBrowseVgmstream" Grid.Row="4" Grid.Column="2"
+                            <Button x:Name="BtnBrowseVgmstream" Grid.Row="3" Grid.Column="2"
                                     Width="76" Margin="0,0,6,4" Click="BtnBrowseVgmstream_Click"/>
-                            <Button x:Name="BtnResetPaths" Grid.Row="4" Grid.Column="3"
+                            <Button x:Name="BtnResetPaths" Grid.Row="3" Grid.Column="3"
                                     Width="76" Margin="0,0,0,4" Click="BtnResetPaths_Click"/>
 
-                            <!-- 直接读游戏文件导出（游戏根目录 / WEM 音频目录）-->
-                            <TextBlock x:Name="PathGameRootLabel" Grid.Row="5" Grid.Column="0"
-                                       VerticalAlignment="Center" Margin="0,0,8,4"/>
-                            <TextBox x:Name="PathGameRootBox" Grid.Row="5" Grid.Column="1"
-                                     Margin="0,0,6,4" Padding="3,2" TextChanged="PathBox_TextChanged"/>
-                            <Button x:Name="BtnBrowseGameRoot" Grid.Row="5" Grid.Column="2"
-                                    Width="76" Margin="0,0,6,4" Click="BtnBrowseGameRoot_Click"/>
-                            <Button x:Name="BtnFindGameRoot" Grid.Row="5" Grid.Column="3"
-                                    Width="76" Margin="0,0,0,4" Click="BtnFindGameRoot_Click"/>
-
-                            <TextBlock x:Name="PathWemAudioLabel" Grid.Row="6" Grid.Column="0"
+                            <!-- 直接读游戏文件导出 -->
+                            <TextBlock x:Name="PathGameRootLabel" Grid.Row="4" Grid.Column="0"
                                        VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBox x:Name="PathWemAudioBox" Grid.Row="6" Grid.Column="1"
+                            <TextBox x:Name="PathGameRootBox" LostFocus="PathBox_LostFocus" Grid.Row="4" Grid.Column="1"
                                      Margin="0,0,6,0" Padding="3,2" TextChanged="PathBox_TextChanged"/>
-                            <Button x:Name="BtnBrowseWemAudio" Grid.Row="6" Grid.Column="2"
-                                    Width="76" Margin="0,0,6,0" Click="BtnBrowseWemAudio_Click"/>
-                            <Button x:Name="BtnOpenWemAudio" Grid.Row="6" Grid.Column="3"
-                                    Width="76" Click="BtnOpenWemAudio_Click"/>
+                            <Button x:Name="BtnBrowseGameRoot" Grid.Row="4" Grid.Column="2"
+                                    Width="76" Margin="0,0,6,0" Click="BtnBrowseGameRoot_Click"/>
+                            <Button x:Name="BtnFindGameRoot" Grid.Row="4" Grid.Column="3"
+                                    Width="76" Click="BtnFindGameRoot_Click"/>
                         </Grid>
                     </GroupBox>
 

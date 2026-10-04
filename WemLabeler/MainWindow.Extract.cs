@@ -37,18 +37,24 @@ public partial class MainWindow
     {
         if (_paths != null) return _paths;
 
-        var detected = PipelinePaths.DetectBaseDir(_config.BaseDir, _loadedCsvPath);
-
-        // 探测不到就**不要**拿 exe 目录充数：真实用户常常把 exe 放在下载目录里，
-        // 那样只会得到一堆根本不存在的路径（如 C:\下载\WemLabeler\GraphSoundRes）。
-        // 保留已配置的值（可能用户手填过但目录暂时不可用），否则留空并提示用户去选。
-        var baseDir = detected ?? _config.BaseDir ?? string.Empty;
-
-        // 只在真正探测到项目根目录时回写配置
-        if (detected != null && !string.Equals(_config.BaseDir, detected, StringComparison.OrdinalIgnoreCase))
+        // 用户设过就直接用，**绝不**拿自动探测去覆盖他的选择 —— 原来的写法是
+        // 「配置里的目录不像项目根」就跑去自动探测，然后把探测结果写回配置，
+        // 于是用户设的值被顶掉、界面显示成别的路径、点作业还被要求重选。
+        string baseDir;
+        if (!string.IsNullOrWhiteSpace(_config.BaseDir))
         {
-            _config.BaseDir = detected;
-            ConfigManager.Save(_config);
+            baseDir = _config.BaseDir!;
+        }
+        else
+        {
+            // 只有从没设过时才自动探测（往上找带标志目录的那层，是给「exe 就放在数据目录里」的便利）
+            var detected = PipelinePaths.DetectBaseDir(null, _loadedCsvPath);
+            baseDir = detected ?? string.Empty;
+            if (detected != null)
+            {
+                _config.BaseDir = detected;
+                ConfigManager.Save(_config);
+            }
         }
 
         _paths = new PipelinePaths(baseDir, _config);
@@ -62,31 +68,29 @@ public partial class MainWindow
     private bool EnsureProjectRoot()
     {
         var paths = EnsurePaths();
-        if (paths.HasBaseDir && PipelinePaths.LooksLikeBaseDir(paths.BaseDir)) return true;
+        // 只要用户设过目录就算数：那几个标志目录本身就是本程序的产物，不是前提条件。
+        // 需要的话由程序建出来（这里顺带把各个输出目录都建好）。
+        if (!string.IsNullOrWhiteSpace(paths.BaseDir))
+        {
+            paths.EnsureDirectories();
+            return true;
+        }
 
         SetStatus(Locale.S("status_need_basedir"));
         ShowProjectRootHint(true);
 
-        // 直接弹出选择框：用户点的就是要用到项目根目录的操作，这里问一次最省事
-        var dir = PickFolder(Locale.S("dlg_set_basedir"), _config.BaseDir ?? EnsurePaths().BaseDir);
+        // 从没设过才问一次
+        var dir = PickFolder(Locale.S("dlg_set_basedir"), null);
         if (dir == null) return false;
 
         _config.BaseDir = dir;
         ConfigManager.Save(_config);
         InvalidatePaths();
         var refreshed = EnsurePaths();
+        refreshed.EnsureDirectories();
+        ShowProjectRootHint(false);
         RefreshExtractPaths();
-
-        if (PipelinePaths.LooksLikeBaseDir(refreshed.BaseDir))
-        {
-            ShowProjectRootHint(false);
-            SetStatus(Locale.S("status_basedir_set", refreshed.BaseDir));
-            return true;
-        }
-
-        // 选的目录里没有那几个标志性子目录，提醒一下但允许继续（用户可能结构不常规）
-        ShowProjectRootHint(true);
-        SetStatus(Locale.S("status_basedir_suspect", refreshed.BaseDir));
+        SetStatus(Locale.S("status_basedir_set", refreshed.BaseDir));
         return true;
     }
 
@@ -358,7 +362,7 @@ public partial class MainWindow
         ConfigManager.Save(_config);
         RefreshExtractPaths();
 
-        var rootFound = gameRoot;
+        var rootFound = gameRoot!;   // 上面已判过 null，进 lambda 后编译器看不出来
         StartExtractJob(Locale.S("btn_odradek_export"), (progress, log, ct) =>
         {
             var paths = EnsurePaths();
@@ -378,7 +382,8 @@ public partial class MainWindow
         if (!EnsureProjectRoot()) return;
 
         var paths = EnsurePaths();
-        var defaultDir = string.IsNullOrWhiteSpace(_config.WemAudioDir) ? paths.WemResWemDir : _config.WemAudioDir!;
+        // 合并后只有一个 WEM 目录：既是 pipeline 的输入，也是导出 WEM 音频的默认输出
+        var defaultDir = paths.WemResWemDir;
 
         var answer = MessageBox.Show(this,
             Locale.S("dlg_wem_audio_size_warning", defaultDir),
@@ -407,13 +412,12 @@ public partial class MainWindow
             if (gameRoot == null) return;
         }
 
-        _config.WemAudioDir = targetDir;
         _config.GameRoot = gameRoot;
         ConfigManager.Save(_config);
         RefreshExtractPaths();
 
         var chosen = targetDir;
-        var rootFound = gameRoot;
+        var rootFound = gameRoot!;   // 上面已判过 null，进 lambda 后编译器看不出来
         StartExtractJob(Locale.S("btn_wem_audio_export"), (progress, log, ct) =>
         {
             var count = OdradekExporter.ExportWemAudio(rootFound, chosen, progress, log, ct);
@@ -430,24 +434,31 @@ public partial class MainWindow
     private void RefreshExtractPaths()
     {
         var paths = EnsurePaths();
-        var valid = paths.HasBaseDir && PipelinePaths.LooksLikeBaseDir(paths.BaseDir);
+        var baseExists = paths.HasBaseDir;                                        // 目录确实存在（用户设过就算数）
         var notSetSuffix = Locale.S("lbl_suffix_not_set");
         var notFoundSuffix = Locale.S("lbl_suffix_not_found");
 
         _suppressPathEvents = true;
         try
         {
-            PathBaseDirBox.Text = paths.HasBaseDir ? paths.BaseDir : "";
+            // 正在某个框里打字时不要覆盖它 —— 否则每敲一个键都会被程序重写，光标会跳、内容会被清空
+            void SetBox(System.Windows.Controls.TextBox box, string value)
+            {
+                if (box.IsKeyboardFocusWithin) return;
+                box.Text = value;
+            }
+
+            // 原样显示配置里的值，哪怕是还不存在的路径 —— 否则一边输一边被判为无效，框会被反复清空。
+            SetBox(PathBaseDirBox, paths.BaseDir);
 
             // 派生目录：项目根目录没设好就留空（不要显示 "Exported_Audio" 这种相对路径）；
             // 用户单独指定过的项仍然照实显示。
-            PathOutputDirBox.Text = paths.OutputDirOverride != null || valid ? paths.OutputDir : "";
-            PathWemResWemDirBox.Text = paths.WemResWemDirOverride != null || valid ? paths.WemResWemDir : "";
-            PathTxtpDirBox.Text = paths.TxtpDirOverride != null || valid ? paths.TxtpDir : "";
+            SetBox(PathOutputDirBox, paths.OutputDirOverride != null || baseExists ? paths.OutputDir : "");
+            SetBox(PathWemResWemDirBox, paths.WemResWemDirOverride != null || baseExists ? paths.WemResWemDir : "");
 
             // vgmstream：手工指定的路径优先，其次 exe 旁边的 utils
             var vgm = ToolLocator.FindVgmstreamCli(_config.VgmstreamPath);
-            PathVgmstreamBox.Text = vgm ?? "";
+            SetBox(PathVgmstreamBox, vgm ?? "");
             if (vgm != null && !string.Equals(_config.VgmstreamPath, vgm, StringComparison.OrdinalIgnoreCase))
             {
                 _config.VgmstreamPath = vgm;
@@ -455,34 +466,32 @@ public partial class MainWindow
             }
 
             // 标签后缀：把「未设置 / 未找到」放在标签上，不污染输入框
-            PathBaseDirLabel.Text = valid || paths.HasBaseDir
-                ? Locale.S("lbl_path_basedir")
-                : Locale.S("lbl_path_basedir") + notSetSuffix;
-            PathOutputDirLabel.Text = paths.OutputDirOverride != null || valid
+            // 与其它行保持一致：只在「根本没值」时标注（未设置）。路径存在与否、
+            // 像不像项目根目录，交给下面的黄色提示条表达 —— 否则用户从资源管理器粘贴
+            // 一个带引号的路径时，标签就会莫名翻成「未设置」。
+            PathBaseDirLabel.Text = string.IsNullOrWhiteSpace(paths.BaseDir)
+                ? Locale.S("lbl_path_basedir") + notSetSuffix
+                : Locale.S("lbl_path_basedir");
+            PathOutputDirLabel.Text = paths.OutputDirOverride != null || baseExists
                 ? Locale.S("lbl_path_output") : Locale.S("lbl_path_output") + notSetSuffix;
-            PathWemResWemLabel.Text = paths.WemResWemDirOverride != null || valid
+            PathWemResWemLabel.Text = paths.WemResWemDirOverride != null || baseExists
                 ? Locale.S("lbl_path_wemreswem") : Locale.S("lbl_path_wemreswem") + notSetSuffix;
-            PathTxtpDirLabel.Text = paths.TxtpDirOverride != null || valid
-                ? Locale.S("lbl_path_txtp") : Locale.S("lbl_path_txtp") + notSetSuffix;
-            PathVgmstreamLabel.Text = vgm != null
-                ? Locale.S("lbl_path_vgmstream") : Locale.S("lbl_path_vgmstream") + notFoundSuffix;
 
+            // 直接读游戏文件导出：游戏根目录
 
-            // 直接读游戏文件导出：游戏根目录 / WEM 音频目录
-            PathGameRootBox.Text = _config.GameRoot ?? "";
-            PathWemAudioBox.Text = string.IsNullOrWhiteSpace(_config.WemAudioDir) ? paths.WemResWemDir : _config.WemAudioDir!;
-
+            SetBox(PathGameRootBox, _config.GameRoot ?? "");
             PathGameRootLabel.Text = OdradekExporter.IsGameRoot(_config.GameRoot)
                 ? Locale.S("lbl_path_game_root") : Locale.S("lbl_path_game_root") + notSetSuffix;
-            PathWemAudioLabel.Text = Locale.S("lbl_path_wem_audio");
         }
         finally
         {
             _suppressPathEvents = false;
         }
 
-        ShowProjectRootHint(!valid);
-        if (ProjectRootHintText != null) ProjectRootHintText.Text = Locale.S("hint_need_basedir");
+        // 只有「从没设过」才提示；用户设过就一律不再唠叨（那些标志目录是产物，不是前提）
+        ShowProjectRootHint(string.IsNullOrWhiteSpace(paths.BaseDir));
+        if (ProjectRootHintText != null && string.IsNullOrWhiteSpace(paths.BaseDir))
+            ProjectRootHintText.Text = Locale.S("hint_need_basedir");
     }
 
     /// <summary>
@@ -494,7 +503,8 @@ public partial class MainWindow
         if (!_uiReady || _suppressPathEvents) return;
         if (sender is not System.Windows.Controls.TextBox box) return;
 
-        var text = box.Text.Trim();
+        // 容错：去掉首尾空白，以及从资源管理器「复制为路径」带来的包裹引号
+        var text = box.Text.Trim().Trim('"').Trim();
         string? value = text.Length == 0 ? null : text;
 
         if (ReferenceEquals(box, PathBaseDirBox))
@@ -503,7 +513,8 @@ public partial class MainWindow
             _config.BaseDir = value;
             ConfigManager.Save(_config);
             InvalidatePaths();
-            RefreshExtractPaths();
+            // 这里**不能**刷新界面：刷新会重新跑自动探测，把用户正在输的内容替换掉甚至清空
+            // （输到一半的路径当然「不存在」）。改为标记路径失效，等失焦后由 PathBox_LostFocus 统一刷新。
         }
         else if (ReferenceEquals(box, PathOutputDirBox))
         {
@@ -519,13 +530,6 @@ public partial class MainWindow
             ConfigManager.Save(_config);
             InvalidatePaths();
         }
-        else if (ReferenceEquals(box, PathTxtpDirBox))
-        {
-            if (string.Equals(_config.TxtpDir, value, StringComparison.Ordinal)) return;
-            _config.TxtpDir = value;
-            ConfigManager.Save(_config);
-            InvalidatePaths();
-        }
         else if (ReferenceEquals(box, PathVgmstreamBox))
         {
             if (string.Equals(_config.VgmstreamPath, value, StringComparison.Ordinal)) return;
@@ -538,14 +542,15 @@ public partial class MainWindow
             _config.GameRoot = value;
             ConfigManager.Save(_config);
         }
-        else if (ReferenceEquals(box, PathWemAudioBox))
-        {
-            if (string.Equals(_config.WemAudioDir, value, StringComparison.Ordinal)) return;
-            _config.WemAudioDir = value;
-            ConfigManager.Save(_config);
-        }
     }
 
+    /// <summary>路径框失焦后再统一刷新派生目录与标签 —— 避免一边打字一边被程序改写。</summary>
+    private void PathBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (!_uiReady || _suppressPathEvents) return;
+        InvalidatePaths();
+        RefreshExtractPaths();
+    }
     private void BtnFindGameRoot_Click(object sender, RoutedEventArgs e)
     {
         var found = OdradekExporter.AutoDetectGameRoot(_config.GameRoot, null, CancellationToken.None);
@@ -567,24 +572,6 @@ public partial class MainWindow
         _config.GameRoot = dir;
         ConfigManager.Save(_config);
         RefreshExtractPaths();
-    }
-
-    private void BtnBrowseWemAudio_Click(object sender, RoutedEventArgs e)
-    {
-        var current = string.IsNullOrWhiteSpace(_config.WemAudioDir) ? EnsurePaths().WemResWemDir : _config.WemAudioDir!;
-        var dir = PickFolder(Locale.S("dlg_wem_audio_choose"), current);
-        if (dir == null) return;
-        _config.WemAudioDir = dir;
-        ConfigManager.Save(_config);
-        RefreshExtractPaths();
-    }
-
-    private void BtnOpenWemAudio_Click(object sender, RoutedEventArgs e)
-    {
-        var dir = string.IsNullOrWhiteSpace(_config.WemAudioDir) ? EnsurePaths().WemResWemDir : _config.WemAudioDir!;
-        try { Directory.CreateDirectory(dir); } catch { }
-        if (Directory.Exists(dir)) OpenPathInExplorer(dir);
-        else SetStatus(Locale.S("status_dir_missing"));
     }
 
     private void BtnOpenUtilsDir_Click(object sender, RoutedEventArgs e)
@@ -626,16 +613,6 @@ public partial class MainWindow
         SetStatus(Locale.S("status_wemreswemdir_set", dir));
     }
 
-    private void BtnBrowseTxtpDir_Click(object sender, RoutedEventArgs e)
-    {
-        var dir = PickFolder(Locale.S("dlg_set_txtpdir"), _config.TxtpDir ?? EnsurePaths().TxtpDir);
-        if (dir == null) return;
-        _config.TxtpDir = dir;
-        ConfigManager.Save(_config);
-        InvalidatePaths();
-        RefreshExtractPaths();
-        SetStatus(Locale.S("status_txtpdir_set", dir));
-    }
 
     private void BtnBrowseVgmstream_Click(object sender, RoutedEventArgs e)
     {
@@ -648,7 +625,6 @@ public partial class MainWindow
         _config.BaseDir = null;
         _config.OutputAudioDir = null;
         _config.WemResWemDir = null;
-        _config.TxtpDir = null;
         _config.ExportByIdDir = null;
         ConfigManager.Save(_config);
         InvalidatePaths();
@@ -659,8 +635,6 @@ public partial class MainWindow
     private void BtnOpenBaseDir_Click(object sender, RoutedEventArgs e) => OpenPathInExplorer(EnsurePaths().BaseDir);
     private void BtnOpenOutputDir_Click(object sender, RoutedEventArgs e) => OpenPathInExplorer(EnsurePaths().OutputDir);
     private void BtnOpenWemResWemDir_Click(object sender, RoutedEventArgs e) => OpenPathInExplorer(EnsurePaths().WemResWemDir);
-    private void BtnOpenTxtpDir_Click(object sender, RoutedEventArgs e) => OpenPathInExplorer(EnsurePaths().TxtpDir);
-
     #endregion
 
     #region 提取音频页：内联作业执行

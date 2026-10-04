@@ -158,26 +158,20 @@ public partial class MainWindow : Window
         PathBaseDirLabel.Text = L("lbl_path_basedir");
         PathOutputDirLabel.Text = L("lbl_path_output");
         PathWemResWemLabel.Text = L("lbl_path_wemreswem");
-        PathTxtpDirLabel.Text = L("lbl_path_txtp");
         PathVgmstreamLabel.Text = L("lbl_path_vgmstream");
         PathGameRootLabel.Text = L("lbl_path_game_root");
-        PathWemAudioLabel.Text = L("lbl_path_wem_audio");
         BtnOdradekExport.Content = L("btn_odradek_export");
         BtnWemAudioExport.Content = L("btn_wem_audio_export");
 
         BtnBrowseBaseDir.Content = L("btn_browse");
         BtnBrowseOutputDir.Content = L("btn_browse");
         BtnBrowseWemResWemDir.Content = L("btn_browse");
-        BtnBrowseTxtpDir.Content = L("btn_browse");
         BtnBrowseVgmstream.Content = L("btn_browse");
         BtnFindGameRoot.Content = L("btn_find_game");
         BtnBrowseGameRoot.Content = L("btn_browse");
-        BtnBrowseWemAudio.Content = L("btn_browse");
-        BtnOpenWemAudio.Content = L("btn_open");
         BtnOpenBaseDir.Content = L("btn_open");
         BtnOpenOutputDir.Content = L("btn_open");
         BtnOpenWemResWemDir.Content = L("btn_open");
-        BtnOpenTxtpDir.Content = L("btn_open");
         BtnResetPaths.Content = L("btn_reset_paths");
         BtnExtractBanks.Content = L("btn_extract_banks");
         BtnGenerateTxtp.Content = L("btn_generate_txtp");

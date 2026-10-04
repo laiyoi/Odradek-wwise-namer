@@ -18,11 +18,9 @@ public class AppConfig
     /// <summary>音频导出目录（对应 export_sounds.py 的 OUTPUT_DIR）。</summary>
     public string? OutputAudioDir { get; set; }
 
-    /// <summary>Streaming WEM 文件所在目录（对应 export_sounds.py 的 WEM_RES_WEM_DIR）。</summary>
+    /// <summary>Streaming WEM 文件所在目录（对应 export_sounds.py 的 WEM_RES_WEM_DIR）。
+    /// 同时也是「导出 WEM 音频」的默认输出目录 —— 两者是同一种 .wem，没必要分成两个配置项。</summary>
     public string? WemResWemDir { get; set; }
-
-    /// <summary>txtp 文件目录，为空时使用 BaseDir\Extracted_Banks\txtp。</summary>
-    public string? TxtpDir { get; set; }
 
     /// <summary>按 ID 导出（export_by_id.py）的输出目录。</summary>
     public string? ExportByIdDir { get; set; }
@@ -31,9 +29,6 @@ public class AppConfig
 
     /// <summary>DS2 游戏根目录（含 DS2.exe 的那一层），为空时自动探测。</summary>
     public string? GameRoot { get; set; }
-
-    /// <summary>WEM 音频输出目录（约 10 GB），为空时用 BaseDir\WemResWem。</summary>
-    public string? WemAudioDir { get; set; }
 
 }
 

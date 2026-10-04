@@ -14,8 +14,6 @@ public sealed class PipelinePaths
         BaseDir = baseDir;
         Config = config ?? new AppConfig();
 
-        var txtpOverride = Config.TxtpDir;
-        TxtpDirOverride = string.IsNullOrWhiteSpace(txtpOverride) ? null : txtpOverride;
         var wemResOverride = Config.WemResWemDir;
         WemResWemDirOverride = string.IsNullOrWhiteSpace(wemResOverride) ? null : wemResOverride;
         var outOverride = Config.OutputAudioDir;
@@ -27,7 +25,6 @@ public sealed class PipelinePaths
     public string BaseDir { get; }
     public AppConfig Config { get; }
 
-    public string? TxtpDirOverride { get; }
     public string? WemResWemDirOverride { get; }
     public string? OutputDirOverride { get; }
     public string? ExportByIdDirOverride { get; }
@@ -44,10 +41,12 @@ public sealed class PipelinePaths
     public string ExtractedBanksDir => Combine("Extracted_Banks");
     public string BanksXml => Path.Combine(ExtractedBanksDir, "banks.xml");
 
-    /// <summary>wwiser 生成的 txtp 目录，可由 config 的 TxtpDir 覆盖。</summary>
-    public string TxtpDir => TxtpDirOverride ?? Path.Combine(ExtractedBanksDir, "txtp");
+    /// <summary>wwiser 生成的 txtp 目录。固定挂在提取出来的 bank 下面（不是配置项）——
+    /// 与仓库根布局一致：<c>&lt;项目根&gt;\Extracted_Banks\txtp</c>。</summary>
+    public string TxtpDir => Path.Combine(ExtractedBanksDir, "txtp");
 
-    /// <summary>Streaming WEM 文件目录（原 py 中硬编码为 G:\ds2_unpack\wems\WemResWem）。</summary>
+    /// <summary>WEM 文件目录：既是 pipeline 读取 .wem 的输入，也是「导出 WEM 音频」的默认输出。
+    /// 默认 <c>&lt;项目根&gt;\WemResWem</c>，可用 config 的 WemResWemDir 指到别处（本项目在 G: 盘）。</summary>
     public string WemResWemDir =>
         WemResWemDirOverride ?? Path.Combine(BaseDir, "WemResWem");
 
@@ -69,6 +68,23 @@ public sealed class PipelinePaths
 
     private string Combine(string relative) => Path.Combine(BaseDir, relative);
 
+    /// <summary>
+    /// 把流水线要用的各个目录建出来。
+    /// 这些目录（GraphSoundRes / BankRes / WemResJson / … / Extracted_Banks）**都是本程序的产物**，
+    /// 所以不该拿它们是否存在来判断「用户选的目录对不对」，更不该要求用户先手工建好。
+    /// </summary>
+    public void EnsureDirectories()
+    {
+        foreach (var dir in new[]
+                 {
+                     BaseDir, BankResDir, GraphSoundResDir, GraphPgmResDir,
+                     NodeConstResDir, WwiseIdDir, WemResJsonDir, ExtractedBanksDir
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(dir)) continue;
+            try { Directory.CreateDirectory(dir); } catch { }
+        }
+    }
     /// <summary>是否设置了项目根目录（目录确实存在）。</summary>
     public bool HasBaseDir => !string.IsNullOrWhiteSpace(BaseDir) && Directory.Exists(BaseDir);
 

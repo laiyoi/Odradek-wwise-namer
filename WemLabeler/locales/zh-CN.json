@@ -22,8 +22,7 @@
   "gb_output": "输出",
   "lbl_path_basedir": "项目根目录:",
   "lbl_path_output": "音频导出目录:",
-  "lbl_path_wemreswem": "Streaming WEM 目录:",
-  "lbl_path_txtp": "txtp 目录:",
+  "lbl_path_wemreswem": "WEM 目录（读/写同一处）:",
   "lbl_path_vgmstream": "vgmstream:",
   "btn_browse": "浏览...",
   "btn_open": "打开",
@@ -241,24 +240,22 @@
   "status_basedir_set": "项目根目录已设置: {0}",
   "status_outputdir_set": "音频导出目录已设置: {0}",
   "status_wemreswemdir_set": "Streaming WEM 目录已设置: {0}",
-  "status_txtpdir_set": "txtp 目录已设置: {0}",
   "status_path_missing": "路径不存在: {0}",
 
   "dlg_set_basedir": "选择项目根目录（内含 GraphSoundRes / WemResJson 等）",
   "dlg_set_outputdir": "选择音频导出目录",
   "dlg_set_wemreswemdir": "选择 Streaming WEM (.wem) 所在目录",
-  "dlg_set_txtpdir": "选择 txtp 文件目录",
   "dlg_export_by_id_invalid": "以下输入无法解析为整数:\n{0}",
   "dlg_export_by_id_empty": "请至少输入一个目标 ID。",
   "dlg_txtp_pick_title": "选择要播放的 txtp",
   "dlg_txtp_pick_hint": "WemID {0} 被 {1} 个 txtp 引用，请选择要播放的一个：",
   "dlg_reload_csv_after_tool": "已重新生成:\n{0}\n\n是否立即重新加载该 CSV？",
 
-  "about_text": "WEM Labeler v1.5 (WPF)\n\n用于标注缺失的WEM音频文件\n使用 vgmstream 进行实时音频预览\n\n支持 CSV 中包含 WemRes/Banks/WwiseID 等来源信息\n配置文件: config.json\n支持中英文切换\n\n内置音频流水线（工具菜单，已从 Python 脚本迁移）:\n  ① 从 BankRes 提取 BNK\n  ② 构建音频映射表 ③ 按映射表导出音频\n  按 Event ID 导出 / 分析未使用的 WEM\n\n操作提示:\n  ↑ ↓    上一个/下一个文件 (自动保存)\n  Space  播放/停止音频\n  Ctrl+T 播放当前 WEM 所属的 txtp\n  Ctrl+S 保存当前标注\n  Enter  在标注框内按则保存",
+  "about_text": "WEM Labeler v1.6 (WPF)\n\n用于标注缺失的 WEM 音频文件\n使用 vgmstream 进行实时音频预览\n\n配置文件: config.json，支持中英文切换\n\n「提取音频」页（直读游戏文件，无需 odradek.exe）:\n  ⓪ 导出资源（读 streaming_graph.core）\n  导出 WEM 音频（约 10GB）\n  ① 从 BankRes 提取 BNK\n  ② 用 wwiser 生成 TXTP\n  ③ 构建音频映射表\n  ④ 按映射表导出音频\n  分析未使用的 WEM / 重建 txtp 索引 / 按 Event ID 导出\n\n操作提示:\n  ↑ ↓    上一个/下一个文件 (自动保存)\n  Space  播放/停止音频\n  Ctrl+T 播放当前 WEM 所属的 txtp\n  Ctrl+S 保存当前标注\n  Enter  在标注框内按则保存",
   "about_title": "关于",
   "btn_download_tools": "下载工具 (vgmstream + wwiser)",
   "btn_open_utils": "工具目录",
-  "dlg_python_missing": "没有找到 Python 解释器。\n\nwwiser 是 Python 工具，请安装 Python 3，或在「提取音频」页的「Python 解释器」里手动指定 python.exe。",
+  "dlg_python_missing": "没找到 Python 解释器。\n\n「② 用 wwiser 生成 TXTP」这一步需要 Python（程序会自动在 PATH 里找 python / py / python3）。请先安装 Python 并确保它在 PATH 里。",
   "status_wwiser_running": "wwiser 运行中... {0}",
   "pipe_download_target": "[*] 下载目标目录: {0}",
   "pipe_download_vgmstream_ok": "[完成] vgmstream → {0}",
@@ -304,20 +301,11 @@
   "pipe_link_carried_rows": "[*] 另有 {0} 行旧数据（这些 WEM 这次不再是「未使用」）已连同原有信息原样追加在文件末尾",
 
   "lbl_path_game_root": "游戏根目录:",
-  "lbl_path_wem_audio": "WEM 音频目录:",
-  "btn_odradek_export": "⓪ 导出资源（odradek）",
   "btn_wem_audio_export": "导出 WEM 音频（约 10GB）",
-  "dlg_set_game_root": "选择游戏根目录（odradek -s 的取值，游戏 exe 所在目录）",
   "dlg_wem_audio_title": "导出 WEM 音频",
   "dlg_wem_audio_size_warning": "WEM 原始音频体积约 10 GB。\n\n默认目录：\n{0}\n\n「是」= 存到默认目录；「否」= 自己选一个目录；「取消」= 不导出。",
   "dlg_wem_audio_choose": "选择 WEM 音频输出目录",
   "status_need_game_root": "还没指定游戏根目录",
-  "status_dir_missing": "目录不存在",
-  "pipe_odradek_summary": "odradek 导出完成: 归类 {0} 个文件 / 请求 {1} 个对象（其中有界探索 {2} 个）",
-  "pipe_wem_audio_target": "WEM 音频输出目录: {0}",
-  "pipe_wem_audio_existing": "目录里已有 {0} 个 .wem，将跳过",
-  "pipe_wem_audio_count": "待导出 WEM: {0} 个",
-  "pipe_wem_audio_summary": "WEM 音频导出完成: {0} 个 → {1}",
 
 
 
@@ -327,5 +315,7 @@
   "pipe_odradek_summary": "导出完成: 新写 {0} 个 / 跳过 {1} 个 / 失败 {2} 个",
   "pipe_wem_audio_summary": "WEM 音频完成: 新写 {0} 个 → {1}",
   "btn_odradek_export": "⓪ 导出资源（直读游戏文件）",
-  "dlg_set_game_root": "选择 DS2 游戏根目录（含 DS2.exe 的那一层）"
+  "dlg_set_game_root": "选择 DS2 游戏根目录（含 DS2.exe 的那一层）",
+
+  "hint_basedir_suspect": "项目根目录已设为 {0}，但里面没找到 GraphSoundRes / BankRes / WemResJson / Extracted_Banks —— 如果程序随后报找不到某项数据，多半是这里选错了层级。"
 }
