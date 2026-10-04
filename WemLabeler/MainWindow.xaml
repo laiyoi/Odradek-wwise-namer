@@ -50,6 +50,8 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock x:Name="PathBaseDirLabel" Grid.Row="0" Grid.Column="0"
@@ -89,13 +91,32 @@
                                     Width="76" Margin="0,0,0,4" Click="BtnOpenTxtpDir_Click"/>
 
                             <TextBlock x:Name="PathVgmstreamLabel" Grid.Row="4" Grid.Column="0"
-                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                       VerticalAlignment="Center" Margin="0,0,8,4"/>
                             <TextBox x:Name="PathVgmstreamBox" Grid.Row="4" Grid.Column="1"
-                                     Margin="0,0,6,0" Padding="3,2" TextChanged="PathBox_TextChanged"/>
+                                     Margin="0,0,6,4" Padding="3,2" TextChanged="PathBox_TextChanged"/>
                             <Button x:Name="BtnBrowseVgmstream" Grid.Row="4" Grid.Column="2"
-                                    Width="76" Margin="0,0,6,0" Click="BtnBrowseVgmstream_Click"/>
+                                    Width="76" Margin="0,0,6,4" Click="BtnBrowseVgmstream_Click"/>
                             <Button x:Name="BtnResetPaths" Grid.Row="4" Grid.Column="3"
-                                    Width="76" Click="BtnResetPaths_Click"/>
+                                    Width="76" Margin="0,0,0,4" Click="BtnResetPaths_Click"/>
+
+                            <!-- 直接读游戏文件导出（游戏根目录 / WEM 音频目录）-->
+                            <TextBlock x:Name="PathGameRootLabel" Grid.Row="5" Grid.Column="0"
+                                       VerticalAlignment="Center" Margin="0,0,8,4"/>
+                            <TextBox x:Name="PathGameRootBox" Grid.Row="5" Grid.Column="1"
+                                     Margin="0,0,6,4" Padding="3,2" TextChanged="PathBox_TextChanged"/>
+                            <Button x:Name="BtnBrowseGameRoot" Grid.Row="5" Grid.Column="2"
+                                    Width="76" Margin="0,0,6,4" Click="BtnBrowseGameRoot_Click"/>
+                            <Button x:Name="BtnFindGameRoot" Grid.Row="5" Grid.Column="3"
+                                    Width="76" Margin="0,0,0,4" Click="BtnFindGameRoot_Click"/>
+
+                            <TextBlock x:Name="PathWemAudioLabel" Grid.Row="6" Grid.Column="0"
+                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBox x:Name="PathWemAudioBox" Grid.Row="6" Grid.Column="1"
+                                     Margin="0,0,6,0" Padding="3,2" TextChanged="PathBox_TextChanged"/>
+                            <Button x:Name="BtnBrowseWemAudio" Grid.Row="6" Grid.Column="2"
+                                    Width="76" Margin="0,0,6,0" Click="BtnBrowseWemAudio_Click"/>
+                            <Button x:Name="BtnOpenWemAudio" Grid.Row="6" Grid.Column="3"
+                                    Width="76" Click="BtnOpenWemAudio_Click"/>
                         </Grid>
                     </GroupBox>
 
@@ -108,6 +129,12 @@
                                 <TextBlock x:Name="ProjectRootHintText" TextWrapping="Wrap"/>
                             </Border>
                             <WrapPanel>
+                                <Button x:Name="BtnOdradekExport" MinWidth="200" Height="34" FontWeight="SemiBold"
+                                        Margin="0,0,8,8" Click="BtnOdradekExport_Click"/>
+                                <Button x:Name="BtnWemAudioExport" MinWidth="200" Height="34"
+                                        Margin="0,0,8,8" Click="BtnWemAudioExport_Click"/>
+
+
                                 <Button x:Name="BtnDownloadTools" MinWidth="150" Height="34"
                                         Margin="0,0,8,8" Click="BtnDownloadTools_Click"/>
                                 <Button x:Name="BtnOpenUtilsDir" MinWidth="110" Height="34"

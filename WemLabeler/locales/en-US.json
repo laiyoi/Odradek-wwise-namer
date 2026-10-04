@@ -302,5 +302,31 @@
 
   "status_vgm_still_missing": "download finished but vgmstream-cli.exe is still missing",
 
-  "pipe_link_carried_rows": "[*] {0} row(s) from the old file (no longer unused) were carried over as-is at the end of the file"
+  "pipe_link_carried_rows": "[*] {0} row(s) from the old file (no longer unused) were carried over as-is at the end of the file",
+
+  "lbl_path_game_root": "Game root:",
+  "lbl_path_wem_audio": "WEM audio folder:",
+  "btn_odradek_export": "0. Export assets (odradek)",
+  "btn_wem_audio_export": "Export WEM audio (~10GB)",
+  "dlg_set_game_root": "Select the game root folder (the -s value; where the game exe lives)",
+  "dlg_wem_audio_title": "Export WEM audio",
+  "dlg_wem_audio_size_warning": "Raw WEM audio is about 10 GB.\n\nDefault folder:\n{0}\n\nYes = use the default folder; No = pick another folder; Cancel = abort.",
+  "dlg_wem_audio_choose": "Choose the WEM audio output folder",
+  "status_need_game_root": "Game root is not set",
+  "status_dir_missing": "Folder does not exist",
+  "pipe_odradek_summary": "odradek export finished: {0} files classified / {1} objects requested ({2} from bounded exploration)",
+  "pipe_wem_audio_target": "WEM audio output folder: {0}",
+  "pipe_wem_audio_existing": "{0} .wem files already present; those will be skipped",
+  "pipe_wem_audio_count": "WEM files to export: {0}",
+  "pipe_wem_audio_summary": "WEM audio export finished: {0} files -> {1}",
+
+
+
+  "btn_find_game": "Auto-find",
+  "status_game_not_found": "DS2 install not found; please pick the folder containing DS2.exe",
+  "status_game_found": "Found game: {0}",
+  "pipe_odradek_summary": "Export finished: {0} written / {1} skipped / {2} failed",
+  "pipe_wem_audio_summary": "WEM audio finished: {0} written -> {1}",
+  "btn_odradek_export": "0. Export assets (read game files)",
+  "dlg_set_game_root": "Select the DS2 game root (the folder containing DS2.exe)"
 }

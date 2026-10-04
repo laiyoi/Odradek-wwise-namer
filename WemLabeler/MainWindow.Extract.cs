@@ -329,6 +329,100 @@ public partial class MainWindow
     #region 提取音频页：路径字段
 
     /// <summary>
+    /// ⓪ 用 odradek 的命令行自动导出全部资源。
+    /// 流程：找 odradek.exe → 找游戏根目录 → 找并解析 links-*.db → 组目标清单 → 分批导出 → 按文件名归类。
+    /// </summary>
+    /// <summary>
+    /// ⓪ 直接读游戏文件导出全部资源。
+    ///
+    /// 流程：找游戏根目录 → 打开 streaming_graph.core → 按类型搜索对象（纯元数据）
+    /// → 逐组反序列化 → 写 odradek 兼容 JSON 到各处目录。
+    /// **不需要 odradek.exe，也不需要 links-*.db。**
+    /// </summary>
+    private void BtnOdradekExport_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureProjectRoot()) return;
+
+        var gameRoot = _config.GameRoot;
+        if (!OdradekExporter.IsGameRoot(gameRoot))
+        {
+            SetStatus(Locale.S("status_need_game_root"));
+            gameRoot = OdradekExporter.AutoDetectGameRoot(gameRoot, null, CancellationToken.None);
+            if (gameRoot == null)
+            {
+                gameRoot = PickFolder(Locale.S("dlg_set_game_root"), _config.GameRoot);
+                if (gameRoot == null) return;
+            }
+        }
+        _config.GameRoot = gameRoot;
+        ConfigManager.Save(_config);
+        RefreshExtractPaths();
+
+        var rootFound = gameRoot;
+        StartExtractJob(Locale.S("btn_odradek_export"), (progress, log, ct) =>
+        {
+            var paths = EnsurePaths();
+            var summary = OdradekExporter.ExportJson(rootFound, paths, progress, log, ct);
+            var text = Locale.S("pipe_odradek_summary", summary.Written, summary.Skipped, summary.Failed);
+            AudioPipeline.SafeLog(log, text);
+            return text;
+        });
+    }
+
+    /// <summary>
+    /// 抽取 WEM 原始音频（约 10 GB）。先警告体积，再问「用默认目录吗」，
+    /// 选否则弹出目录选择窗口。
+    /// </summary>
+    private void BtnWemAudioExport_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureProjectRoot()) return;
+
+        var paths = EnsurePaths();
+        var defaultDir = string.IsNullOrWhiteSpace(_config.WemAudioDir) ? paths.WemResWemDir : _config.WemAudioDir!;
+
+        var answer = MessageBox.Show(this,
+            Locale.S("dlg_wem_audio_size_warning", defaultDir),
+            Locale.S("dlg_wem_audio_title"),
+            MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+        if (answer == MessageBoxResult.Cancel) return;
+
+        string targetDir;
+        if (answer == MessageBoxResult.Yes)
+        {
+            targetDir = defaultDir;
+        }
+        else
+        {
+            var picked = PickFolder(Locale.S("dlg_wem_audio_choose"), defaultDir);
+            if (picked == null) return;
+            targetDir = picked;
+        }
+
+        var gameRoot = _config.GameRoot;
+        if (!OdradekExporter.IsGameRoot(gameRoot))
+        {
+            SetStatus(Locale.S("status_need_game_root"));
+            gameRoot = OdradekExporter.AutoDetectGameRoot(gameRoot, null, CancellationToken.None)
+                       ?? PickFolder(Locale.S("dlg_set_game_root"), _config.GameRoot);
+            if (gameRoot == null) return;
+        }
+
+        _config.WemAudioDir = targetDir;
+        _config.GameRoot = gameRoot;
+        ConfigManager.Save(_config);
+        RefreshExtractPaths();
+
+        var chosen = targetDir;
+        var rootFound = gameRoot;
+        StartExtractJob(Locale.S("btn_wem_audio_export"), (progress, log, ct) =>
+        {
+            var count = OdradekExporter.ExportWemAudio(rootFound, chosen, progress, log, ct);
+            var text = Locale.S("pipe_wem_audio_summary", count, chosen);
+            AudioPipeline.SafeLog(log, text);
+            return text;
+        });
+    }
+    /// <summary>
     /// 把当前解析出来的各路径显示到「提取音频」页的输入框里。
     /// 输入框现在都是可编辑的，所以**不会**再往里写「(未设置)」这类占位文字
     /// （否则会被当成用户输入的真值）；没设置就把框留空，并在标签后面加个提示。
@@ -372,6 +466,15 @@ public partial class MainWindow
                 ? Locale.S("lbl_path_txtp") : Locale.S("lbl_path_txtp") + notSetSuffix;
             PathVgmstreamLabel.Text = vgm != null
                 ? Locale.S("lbl_path_vgmstream") : Locale.S("lbl_path_vgmstream") + notFoundSuffix;
+
+
+            // 直接读游戏文件导出：游戏根目录 / WEM 音频目录
+            PathGameRootBox.Text = _config.GameRoot ?? "";
+            PathWemAudioBox.Text = string.IsNullOrWhiteSpace(_config.WemAudioDir) ? paths.WemResWemDir : _config.WemAudioDir!;
+
+            PathGameRootLabel.Text = OdradekExporter.IsGameRoot(_config.GameRoot)
+                ? Locale.S("lbl_path_game_root") : Locale.S("lbl_path_game_root") + notSetSuffix;
+            PathWemAudioLabel.Text = Locale.S("lbl_path_wem_audio");
         }
         finally
         {
@@ -429,6 +532,59 @@ public partial class MainWindow
             _config.VgmstreamPath = value;
             ConfigManager.Save(_config);
         }
+        else if (ReferenceEquals(box, PathGameRootBox))
+        {
+            if (string.Equals(_config.GameRoot, value, StringComparison.Ordinal)) return;
+            _config.GameRoot = value;
+            ConfigManager.Save(_config);
+        }
+        else if (ReferenceEquals(box, PathWemAudioBox))
+        {
+            if (string.Equals(_config.WemAudioDir, value, StringComparison.Ordinal)) return;
+            _config.WemAudioDir = value;
+            ConfigManager.Save(_config);
+        }
+    }
+
+    private void BtnFindGameRoot_Click(object sender, RoutedEventArgs e)
+    {
+        var found = OdradekExporter.AutoDetectGameRoot(_config.GameRoot, null, CancellationToken.None);
+        if (found == null)
+        {
+            SetStatus(Locale.S("status_game_not_found"));
+            return;
+        }
+        _config.GameRoot = found;
+        ConfigManager.Save(_config);
+        RefreshExtractPaths();
+        SetStatus(Locale.S("status_game_found", found));
+    }
+
+    private void BtnBrowseGameRoot_Click(object sender, RoutedEventArgs e)
+    {
+        var dir = PickFolder(Locale.S("dlg_set_game_root"), _config.GameRoot);
+        if (dir == null) return;
+        _config.GameRoot = dir;
+        ConfigManager.Save(_config);
+        RefreshExtractPaths();
+    }
+
+    private void BtnBrowseWemAudio_Click(object sender, RoutedEventArgs e)
+    {
+        var current = string.IsNullOrWhiteSpace(_config.WemAudioDir) ? EnsurePaths().WemResWemDir : _config.WemAudioDir!;
+        var dir = PickFolder(Locale.S("dlg_wem_audio_choose"), current);
+        if (dir == null) return;
+        _config.WemAudioDir = dir;
+        ConfigManager.Save(_config);
+        RefreshExtractPaths();
+    }
+
+    private void BtnOpenWemAudio_Click(object sender, RoutedEventArgs e)
+    {
+        var dir = string.IsNullOrWhiteSpace(_config.WemAudioDir) ? EnsurePaths().WemResWemDir : _config.WemAudioDir!;
+        try { Directory.CreateDirectory(dir); } catch { }
+        if (Directory.Exists(dir)) OpenPathInExplorer(dir);
+        else SetStatus(Locale.S("status_dir_missing"));
     }
 
     private void BtnOpenUtilsDir_Click(object sender, RoutedEventArgs e)

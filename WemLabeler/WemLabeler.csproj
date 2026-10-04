@@ -9,6 +9,21 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- 直接读取游戏文件的 Decima/DS2 读取器（另一个 agent 移植，实测导出结果与 odradek 逐字节相同） -->
+    <ProjectReference Include="..\OdradekSharp\OdradekSharp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- RTTI 定义随 exe 一起分发；DecimaGame.Open 默认在 AppContext.BaseDirectory\Data 下找 -->
+    <Content Include="..\OdradekSharp\Data\types.json" Link="Data\types.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\OdradekSharp\Data\extensions.json" Link="Data\extensions.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="locales\*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

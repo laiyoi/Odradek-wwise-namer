@@ -301,5 +301,31 @@
 
   "status_vgm_still_missing": "下载完成但仍未找到 vgmstream-cli.exe",
 
-  "pipe_link_carried_rows": "[*] 另有 {0} 行旧数据（这些 WEM 这次不再是「未使用」）已连同原有信息原样追加在文件末尾"
+  "pipe_link_carried_rows": "[*] 另有 {0} 行旧数据（这些 WEM 这次不再是「未使用」）已连同原有信息原样追加在文件末尾",
+
+  "lbl_path_game_root": "游戏根目录:",
+  "lbl_path_wem_audio": "WEM 音频目录:",
+  "btn_odradek_export": "⓪ 导出资源（odradek）",
+  "btn_wem_audio_export": "导出 WEM 音频（约 10GB）",
+  "dlg_set_game_root": "选择游戏根目录（odradek -s 的取值，游戏 exe 所在目录）",
+  "dlg_wem_audio_title": "导出 WEM 音频",
+  "dlg_wem_audio_size_warning": "WEM 原始音频体积约 10 GB。\n\n默认目录：\n{0}\n\n「是」= 存到默认目录；「否」= 自己选一个目录；「取消」= 不导出。",
+  "dlg_wem_audio_choose": "选择 WEM 音频输出目录",
+  "status_need_game_root": "还没指定游戏根目录",
+  "status_dir_missing": "目录不存在",
+  "pipe_odradek_summary": "odradek 导出完成: 归类 {0} 个文件 / 请求 {1} 个对象（其中有界探索 {2} 个）",
+  "pipe_wem_audio_target": "WEM 音频输出目录: {0}",
+  "pipe_wem_audio_existing": "目录里已有 {0} 个 .wem，将跳过",
+  "pipe_wem_audio_count": "待导出 WEM: {0} 个",
+  "pipe_wem_audio_summary": "WEM 音频导出完成: {0} 个 → {1}",
+
+
+
+  "btn_find_game": "自动查找",
+  "status_game_not_found": "没找到 DS2 安装目录，请手动指定（含 DS2.exe 的那一层）",
+  "status_game_found": "已找到游戏: {0}",
+  "pipe_odradek_summary": "导出完成: 新写 {0} 个 / 跳过 {1} 个 / 失败 {2} 个",
+  "pipe_wem_audio_summary": "WEM 音频完成: 新写 {0} 个 → {1}",
+  "btn_odradek_export": "⓪ 导出资源（直读游戏文件）",
+  "dlg_set_game_root": "选择 DS2 游戏根目录（含 DS2.exe 的那一层）"
 }

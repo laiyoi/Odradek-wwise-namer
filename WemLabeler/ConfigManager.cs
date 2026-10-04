@@ -27,6 +27,14 @@ public class AppConfig
     /// <summary>按 ID 导出（export_by_id.py）的输出目录。</summary>
     public string? ExportByIdDir { get; set; }
 
+    // --- 直接读游戏文件导出 ---
+
+    /// <summary>DS2 游戏根目录（含 DS2.exe 的那一层），为空时自动探测。</summary>
+    public string? GameRoot { get; set; }
+
+    /// <summary>WEM 音频输出目录（约 10 GB），为空时用 BaseDir\WemResWem。</summary>
+    public string? WemAudioDir { get; set; }
+
 }
 
 public static class ConfigManager
