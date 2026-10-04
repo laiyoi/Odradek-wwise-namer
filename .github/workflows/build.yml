@@ -4,14 +4,21 @@ on:
   push:
     paths:
       - "WemLabeler/**"
+      - "OdradekSharp"
       - ".github/workflows/build.yml"
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      # OdradekSharp is a git submodule, so it is NOT present in a plain checkout.
+      # "recursive" also fetches its own nested submodule (external/odradek).
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
