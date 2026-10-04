@@ -20,6 +20,3 @@ OdradekSharp/obj/
 *pyc
 utils/
 !utils/two_repos.txt
-
-# OdradekSharp is tracked in its own repository now (nested git repo)
-OdradekSharp/

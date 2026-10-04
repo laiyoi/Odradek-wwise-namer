@@ -1,0 +1,3 @@
+[submodule "OdradekSharp"]
+	path = OdradekSharp
+	url = https://github.com/laiyoi/OdradekSharp.git
