@@ -26,6 +26,14 @@ public static class Locale
         OnLanguageChanged?.Invoke();
     }
 
+    /// <summary>只加载语言包，不落盘、不发事件。给无界面的命令行模式用。</summary>
+    public static void Initialize(string lang)
+    {
+        if (lang != "zh-CN" && lang != "en-US") lang = "zh-CN";
+        Language = lang;
+        LoadLocale(lang);
+    }
+
     private static void LoadLocale(string lang)
     {
         _strings.Clear();

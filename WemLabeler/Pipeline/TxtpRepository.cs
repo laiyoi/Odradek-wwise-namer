@@ -17,16 +17,16 @@ public sealed class TxtpRepository
     private readonly object _lock = new();
     private readonly object _buildLock = new();
     private readonly string _txtpDir;
-    private readonly string _wemResJsonDir;
+    private readonly string _wemIndexJson;
     private readonly string _wemResWemDir;
 
     private Dictionary<long, List<string>>? _txtpByWemId;
     private Dictionary<string, string>? _wemPathByWemId;
 
-    public TxtpRepository(string txtpDir, string wemResJsonDir, string wemResWemDir)
+    public TxtpRepository(string txtpDir, string wemIndexJson, string wemResWemDir)
     {
         _txtpDir = txtpDir;
-        _wemResJsonDir = wemResJsonDir;
+        _wemIndexJson = wemIndexJson;
         _wemResWemDir = wemResWemDir;
     }
 
@@ -113,7 +113,10 @@ public sealed class TxtpRepository
         return null;
     }
 
-    /// <summary>WEM ID → WemResWem 中实际的 .wem 文件路径（惰性索引）。</summary>
+    /// <summary>
+    /// WEM ID → WemResWem 中实际的 .wem 文件路径（惰性索引）。
+    /// 用 ⓪ 写的 <c>wem_index.json</c>（WemID → 对象坐标）推导，不再需要 WemResJson。
+    /// </summary>
     public string? ResolveWemFile(long wemId)
     {
         lock (_lock)
@@ -121,22 +124,28 @@ public sealed class TxtpRepository
             if (_wemPathByWemId == null)
             {
                 var index = new Dictionary<string, string>();
-                if (Directory.Exists(_wemResWemDir))
+                var coords = AudioPipeline.LoadWemIndex(
+                    new PipelinePaths(Path.GetDirectoryName(_wemIndexJson) ?? "", null));
+                foreach (var (id, coord) in coords)
+                {
+                    var parts = coord.Split(':');
+                    if (parts.Length != 2) continue;
+                    var wemPath = Path.Combine(_wemResWemDir, $"WwiseWemResource_{parts[0]}_{parts[1]}.wem");
+                    if (File.Exists(wemPath)) index[id.ToString()] = wemPath;
+                }
+
+                // wem_index.json 不在（还没跑过 ⓪）时退回到「按文件名 + 目录里现存的 .wem」：
+                // 这样至少能用 txtp 里出现的 wem/<id>.wem 直接命中。
+                if (index.Count == 0 && Directory.Exists(_wemResWemDir))
                 {
                     var pattern = new Regex(@"WwiseWemResource_(\d+)_(\d+)\.wem$", RegexOptions.Compiled);
                     foreach (var file in Directory.EnumerateFiles(_wemResWemDir, "*.wem"))
                     {
-                        var m = pattern.Match(Path.GetFileName(file));
-                        if (!m.Success) continue;
-                        var jsonPath = Path.Combine(_wemResJsonDir,
-                            $"WwiseWemResource_{m.Groups[1].Value}_{m.Groups[2].Value}.json");
-                        if (!File.Exists(jsonPath)) continue;
-                        using var doc = AudioPipeline.LoadJsonDocument(jsonPath);
-                        if (doc == null) continue;
-                        var rawId = AudioPipeline.JsonLong(doc.RootElement, "WemID");
-                        if (rawId.HasValue) index[rawId.Value.ToString()] = file;
+                        if (!pattern.IsMatch(Path.GetFileName(file))) continue;
+                        index[Path.GetFileNameWithoutExtension(file)] = file;
                     }
                 }
+
                 _wemPathByWemId = index;
             }
 

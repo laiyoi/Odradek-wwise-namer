@@ -7,6 +7,36 @@ namespace WemLabeler.Pipeline;
 public static partial class AudioPipeline
 {
     /// <summary>
+    /// 解析 txtp 里内嵌音频行的 bank 路径。
+    ///
+    /// 正常情况是相对 txtp 目录的 <c>../WwiseBankResource_x_y.bnk</c>，先按这个解析。
+    /// 但 wwiser 在 <c>-go</c> 给绝对路径时会写出错的前缀
+    /// （<c>../../../../WwiseBankResource_x_y.bnk</c>，层数 = 输出目录在盘符以下的层数 + 1），
+    /// 从 txtp 目录解析出去会指到盘根 —— 那些先跑一遍得到的历史 txtp 也得能用。
+    /// 所以第二步按**文件名**去 <c>Extracted_Banks</c> 里找：.bnk 都平铺在那里，文件名唯一。
+    /// </summary>
+    private static string? ResolveEmbeddedBank(PipelinePaths paths, string rawPath)
+    {
+        if (string.IsNullOrWhiteSpace(rawPath)) return null;
+
+        var relative = rawPath.Replace('/', Path.DirectorySeparatorChar);
+        var name = Path.GetFileName(relative);
+        if (string.IsNullOrEmpty(name)) return null;
+
+        // 1) 按相对 txtp 目录正常解析（../X.bnk）
+        try
+        {
+            var direct = Path.GetFullPath(Path.Combine(paths.TxtpDir, relative));
+            if (File.Exists(direct)) return direct;
+        }
+        catch { }
+
+        // 2) 按文件名去 banks 目录里找
+        var byName = Path.Combine(paths.ExtractedBanksDir, name);
+        return File.Exists(byName) ? byName : null;
+    }
+
+    /// <summary>
     /// 对应 export_sounds.py 的 export_from_mapping（阶段二）：
     /// 基于 sound_wem_mapping_export.json 逐个音频源导出 WAV，
     /// 支持断点续传（export_progress.json）并把缺失的 Streaming WEM
@@ -46,7 +76,8 @@ public static partial class AudioPipeline
         SafeLog(log, new string('=', 50));
 
         var startTime = DateTime.UtcNow;
-        var wemResWemIndex = BuildWemResWemIndex(paths);
+        // WemID → 实际 .wem 路径：由 ⓪ 写出的 wem_index.json 推导（不再依赖 WemResJson）
+        var wemResWemIndex = BuildWemPaths(paths, LoadWemIndex(paths));
 
         Directory.CreateDirectory(paths.OutputDir);
 
@@ -80,8 +111,8 @@ public static partial class AudioPipeline
             ct.ThrowIfCancellationRequested();
             var item = mappingData[i];
             var resourceName = item.ResourceName;
-            var wwiseId = item.WwiseID_Value;
-            var key = (resourceName, wwiseId);
+            var wwiseId = ToU32(item.WwiseID);
+            var key = (resourceName, (long)wwiseId);
 
             if (processed.Contains(key)) continue;
 
@@ -130,8 +161,13 @@ public static partial class AudioPipeline
                 {
                     var rawPath = rawLine.Split(" #")[0].Trim();
                     var parameters = rawLine.Length > rawPath.Length ? rawLine[rawPath.Length..].Trim() : "";
-                    var relative = ReplaceFirst(rawPath, "../", "");
-                    var finalPath = Path.GetFullPath(Path.Combine(absBase, relative));
+                    var finalPath = ResolveEmbeddedBank(paths, rawPath);
+                    if (finalPath == null)
+                    {
+                        report.Failed.Add($"{namePrefix} (找不到 bank: {rawPath})");
+                        exportResults.Add($"E{idx}:失败");
+                        continue;
+                    }
                     var finalLine = $"{finalPath} {parameters}".Trim();
 
                     var outputName = audioSources.Count > 1 ? $"{namePrefix}_{idx:D2}.wav" : $"{namePrefix}.wav";
@@ -323,7 +359,7 @@ public static partial class AudioPipeline
                 {
                     var rawPath = cleanLine.Split(" #")[0].Trim();
                     var parameters = cleanLine.Length > rawPath.Length ? cleanLine[rawPath.Length..].Trim() : "";
-                    var finalPath = Path.GetFullPath(Path.Combine(absBase, ReplaceFirst(rawPath, "../", "")));
+                    var finalPath = ResolveEmbeddedBank(paths, rawPath) ?? rawPath;
                     finalLine = $"{finalPath} {parameters}".Trim();
                 }
                 else if (u32Id.HasValue && wemMap.TryGetValue(ToU32(u32Id.Value), out var targetPath))
@@ -481,15 +517,15 @@ public static partial class AudioPipeline
         return results.Count;
     }
 
-    /// <summary>新格式的基础列（去掉了无信息量的 IsStreaming）。</summary>
+    /// <summary>本程序的固定列。</summary>
     private static readonly string[] UnusedCsvBaseHeader =
     {
         "WemID", "Coord", "JsonFile", "WemFile", "WemPath", "FoundInBankRes", "TxtpFiles"
     };
 
     /// <summary>
-    /// 旧格式里有、但新格式**明确不再产出**的列：这些列属于「本工具负责的字段」，
-    /// 不要当成额外列保留回来（其余非基础列一律原样保留）。
+    /// **唯一**明确不再产出的列。其余列（尤其是人工加的 Label 之类）一律按原顺序原样带回来，
+    /// 不删减。IsStreaming 在本作里 7,838 个 WEM 全是 true，没有任何信息量。
     /// </summary>
     private static readonly string[] UnusedCsvDroppedHeader = { "IsStreaming" };
 
@@ -501,7 +537,7 @@ public static partial class AudioPipeline
     /// 另外：旧文件里存在、但这次不再是「未使用」的 WEM，**整行原样追加在末尾**
     /// （连同它们的标注等额外列），这样重新生成不会丢掉任何人工填过的信息。
     ///
-    /// 被明确删掉的列（IsStreaming）不写、也不带回。
+    /// 只有 <see cref="UnusedCsvDroppedHeader"/> 里的列会被丢掉。
     /// </summary>
     private static void WriteUnusedWemWithBanksCsv(string path, List<UnusedWemRow> rows, Action<string>? log)
     {

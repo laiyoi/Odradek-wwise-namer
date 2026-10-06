@@ -3,26 +3,61 @@ using System.Text.Encodings.Web;
 
 namespace WemLabeler.Pipeline;
 
-/// <summary>对应 py 中 mapping 条目的 AudioSources 元素。</summary>
+/// <summary>mapping 条目的 AudioSources 元素。</summary>
 public sealed class AudioSourceInfo
 {
     public long? WemID { get; set; }
     public string SourceType { get; set; } = "Unknown";
     public string? BankFile { get; set; }
+    /// <summary>
+    /// 对应的 <c>WwiseWemResource</c> 对象坐标 <c>组:下标</c>（**不是** WemID）。
+    /// 由 wem_index.json 查得；查不到时为 null。
+    /// </summary>
     public string? WemRes_Coord { get; set; }
     public string? RawLine { get; set; }
 }
 
-/// <summary>对应 export_sounds.py 生成的 sound_wem_mapping_export.json 的条目。</summary>
+/// <summary>
+/// sound_wem_mapping_export.json 的条目。
+///
+/// 只保留「名字 + GraphSoundResource 坐标 + WwiseID + txtp 信息」：中间的
+/// GraphProgramResource / NodeConstantsResource 坐标已不需要 —— 跳链直接从游戏数据完成
+/// （见 SoundChainResolver），那些 JSON 也不再落盘。
+/// </summary>
 public sealed class MappingEntry
 {
     public string ResourceName { get; set; } = "Unknown";
-    public string GraphProgram { get; set; } = "";
-    public string ExposedDataResource { get; set; } = "";
-    public long WwiseID_Value { get; set; }
-    public string WwiseID_Coord { get; set; } = "";
+    /// <summary>GraphSoundResource 的对象坐标 <c>组:下标</c>。</summary>
+    public string GraphSound { get; set; } = "";
+    public long WwiseID { get; set; }
     public string? TXTP_Filename { get; set; }
     public List<AudioSourceInfo> AudioSources { get; set; } = new();
+}
+
+/// <summary>wem_index.json 里一个 WEM 的条目。</summary>
+public sealed class WemIndexItem
+{
+    /// <summary><c>WwiseWemResource</c> 的对象坐标 <c>组:下标</c>。</summary>
+    public string Coord { get; set; } = "";
+    /// <summary>对应 <c>WwiseWemResource.mLengthInSeconds</c>（约 1,513 个 WEM 有非零值）。</summary>
+    public double LengthSeconds { get; set; }
+}
+
+/// <summary>
+/// wem_index.json：<c>WemID → WwiseWemResource 的对象坐标/流式标志</c>。
+/// 读一次游戏就能写出来，用来顶替原来 7,838 个 WemResJson 文件
+/// （WemID↔.wem 文件名的对应、来源关联、未使用 WEM 分析都靠它）。
+/// </summary>
+public sealed class WemIndexFile
+{
+    public string? WemDir { get; set; }
+    public Dictionary<string, WemIndexItem> Wems { get; set; } = new();
+    /// <summary>
+    /// 所有 <c>WwiseBankResource.WemIDs</c> 的并集（bank 引用到的 WemID）。
+    /// 顶替旧版读 BankRes JSON 的 <c>WemIDs</c> 字段 —— 「分析未使用的 WEM」的
+    /// <c>FoundInBankRes</c> 列用它，语义与 banks.xml 的媒体表不同。
+    /// </summary>
+    public List<string> BankWemIDs { get; set; } = new();
 }
 
 /// <summary>流水线进度回调载荷。</summary>

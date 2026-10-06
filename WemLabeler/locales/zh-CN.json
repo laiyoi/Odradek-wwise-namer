@@ -14,7 +14,6 @@
   "menu_language": "语言(_L)",
   "menu_lang_zh": "中文",
   "menu_lang_en": "English",
-
   "tab_label": "标注音频",
   "tab_extract": "提取音频",
   "gb_paths": "路径设置",
@@ -29,7 +28,7 @@
   "btn_reset_paths": "重新探测",
   "btn_export_by_id": "按 Event ID 导出",
   "btn_clear_log": "清空日志",
-  "btn_extract_banks": "① 从 BankRes 提取 BNK",
+  "btn_extract_banks": "① 从 BankRes 提取 BNK（已并入 ⓪）",
   "btn_generate_txtp": "② 用 wwiser 生成 TXTP",
   "btn_build_mapping": "③ 构建音频映射表",
   "btn_export_audio": "④ 按映射表导出音频",
@@ -44,7 +43,6 @@
   "status_paths_reset": "路径已重置，项目根目录: {0}",
   "status_job_busy": "已有流水线任务在运行，请等待完成或先取消",
   "dlg_job_running": "还有流水线任务在运行，确认退出吗？",
-
   "btn_play": "播放",
   "btn_stop": "停止",
   "chk_autoplay": "选中时自动播放",
@@ -63,13 +61,10 @@
   "lbl_wemres": "WemRes: {0}",
   "lbl_banks": "Banks: {0}",
   "lbl_wwiseid": "大小: {0}",
-
   "lbl_channel": "声道: {0}",
-
   "src_found": "✓ {0} ({1})",
   "src_found_banks": "✓ {0}个: {1}",
   "src_not_found": "✗ 未找到",
-
   "status_idle": "请通过 文件→打开CSV 加载WEM文件列表",
   "status_loading": "正在加载CSV...",
   "status_file_not_found": "文件不存在: {0}",
@@ -93,10 +88,8 @@
   "status_vgmstream_set": "vgmstream路径已设置: {0}",
   "status_export": "已导出: {0} | 共 {1} 条, 已标注 {2} 条",
   "status_export_fail": "导出失败: {0}",
-
   "title": "WEM Labeler - {0} [{1} 个文件]",
   "title_no_file": "WEM Labeler",
-
   "dlg_resume": "上次打开的CSV文件:\n{0}\n\n是否重新加载?",
   "dlg_resume_title": "恢复上次会话",
   "dlg_unsaved": "当前标注尚未保存，确认退出吗?",
@@ -138,7 +131,6 @@
   "lbl_unavailable": "(未写入)",
   "dlg_file_not_found": "文件不存在:\n{0}",
   "dlg_csv_load_fail": "加载CSV失败:\n{0}",
-
   "dlg_open_csv": "选择WEM文件CSV",
   "dlg_open_wem_folder": "选择WEM文件夹",
   "dlg_open_wem_json_folder": "选择包含同名.json文件的文件夹",
@@ -152,15 +144,12 @@
   "filter_txtp": "txtp文件 (*.txtp)|*.txtp|所有文件 (*.*)|*.*",
   "filter_vgmstream": "vgmstream-cli.exe|vgmstream-cli.exe|可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
   "filter_export": "CSV文件 (*.csv)|*.csv",
-
-
   "btn_play_owner_txtp": "播放所属txtp (Ctrl+T)",
   "btn_ok": "确定",
   "btn_cancel": "取消",
   "btn_close": "关闭",
   "btn_copy_log": "复制日志",
   "chk_refresh_wem_cache": "忽略 wem_map_cache.json，强制重建 WEM 索引",
-
   "pipe_running": "正在执行: {0}",
   "pipe_cancelling": "正在取消...",
   "pipe_cancelled": "已取消",
@@ -171,15 +160,27 @@
   "pipe_summary_mapping_export": "完整流程完成: 映射 {0} 条，导出成功 {1}，失败 {2}，跳过 {3}",
   "pipe_summary_byid": "按 ID 导出完成: 成功 {0}，失败 {1}，未找到 txtp 定义 {2} 个",
   "pipe_summary_unused": "未使用 WEM 分析完成: {0} 条，已写入 {1}",
-
   "pipe_bnk_start": "从 BankRes 的 JSON 解码 BankData 并修复对齐问题...",
   "pipe_bnk_done": "[完成] 共成功修复并提取 {0} 个 .bnk 文件。",
   "pipe_bnk_b64_fail": "Base64 解码失败: {0}",
-
-  "pipe_mapping_start": "[阶段一] 构建音频映射表...",
+  "pipe_res_loading_graph": "加载流式图...",
+  "pipe_res_wem_index": "建立 WemID → WwiseWemResource 坐标索引...",
+  "pipe_res_wem_index_done": "[*] wem_index: {0} 个 WemID → {1}",
+  "pipe_res_banks": "把 WwiseBankResource.BankData 直接写成 .bnk...",
+  "pipe_res_banks_done": "[*] bank: 写出 {0} / 共 {1} 个 → {2}",
+  "pipe_res_done": "[完成] ⓪ {0}",
+  "pipe_wemindex_missing": "[!] 找不到 {0}：请先跑一次 ⓪（读游戏资源）",
+  "pipe_mapping_chain_loaded": "[*] 读取 ⓪ 写下的链路: {0} 条 ← {1}",
+  "pipe_mapping_no_chain": "[!] 找不到（或为空）{0}：请先跑一次 ⓪（读游戏资源）",
+  "pipe_mapping_chain_bad": "[!] 解析链路 JSON 失败: {0}",
+  "pipe_mapping_start": "[阶段三] 富化音频映射表（txtp / WEM / bank）...",
   "pipe_mapping_indexing": "正在构建 txtp / WEM / bank 索引...",
   "pipe_mapping_index_summary": "[*] TXTP索引: {0} 个 | WEM索引: {1} 个 | Bank索引: {2} 个",
   "pipe_mapping_scanned": "[*] 扫描到 {0} 个 GraphSoundResource 文件",
+  "pipe_mapping_chain": "直接从游戏数据解析 GraphSound → WwiseID 链路...",
+  "pipe_mapping_game_root": "游戏目录: {0}",
+  "pipe_mapping_no_game": "[!] 找不到《死亡搁浅 2》安装目录（需要包含 DS2.exe 的那一层），无法从游戏数据构建链路",
+  "pipe_mapping_chain_report": "[*] 链路报告: {0}",
   "pipe_mapping_done": "[完成] Mapping构建完成!",
   "pipe_mapping_total": "[*] 总资源: {0}",
   "pipe_mapping_skip_err": "[*] 跳过: {0} | 错误: {1}",
@@ -191,7 +192,6 @@
   "pipe_unused_recorded": "[*] 未使用的WEM记录: {0} ({1}个)",
   "pipe_unused_fail": "写入未使用WEM CSV失败: {0}",
   "pipe_csv_append_fail": "追加CSV失败: {0}",
-
   "pipe_export_start": "[阶段二] 基于Mapping导出音频...",
   "pipe_export_no_mapping": "[!] 找不到mapping文件，请先运行「构建音频映射表」",
   "pipe_export_mapping_broken": "[!] Mapping文件为空或损坏: {0}",
@@ -200,7 +200,6 @@
   "pipe_export_index": "[*] WEM索引: {0} 个 | 已存在: {1} | 已处理: {2}",
   "pipe_export_done": "[完成] 音频导出完成!",
   "pipe_export_summary": "[*] 成功: {0} | 失败: {1} | 跳过: {2} | Streaming记录: {3}",
-
   "pipe_byid_indexing": "构建 WEM ID → WemResWem 索引...",
   "pipe_byid_index_done": "[*] WEM索引: {0} 个",
   "pipe_byid_parse_fail": "解析 {0} 失败: {1}",
@@ -210,13 +209,12 @@
   "pipe_byid_success": " - 成功数量: {0}",
   "pipe_byid_failed": " - 失败数量: {0}",
   "pipe_byid_not_found": " - 未找到定义: {0}",
-
-  "pipe_link_start": "从 WemResJson 构建 WEM 索引，交叉引用 BankRes(WemIDs)、txtp 和 WemResWem",
+  "pipe_link_start": "从 wem_index.json 构建 WEM 索引，交叉引用 bank 媒体表(banks.xml)、txtp 和 WemResWem",
   "pipe_link_indexing": "构建索引...",
-  "pipe_link_wemresjson": "    WemResJson: {0} 个",
+  "pipe_link_wemresjson": "    wem_index: {0} 个",
   "pipe_link_wemreswem": "    WemResWem文件: {0} 个",
-  "pipe_link_bankres": "读取 BankRes 的 WemIDs...",
-  "pipe_link_bankres_done": "    BankRes引用WemID: {0} 个",
+  "pipe_link_bankres": "读取 banks.xml 的媒体表...",
+  "pipe_link_bankres_done": "    bank 收录的 WemID: {0} 个",
   "pipe_link_txtp": "扫描 txtp 引用...",
   "pipe_link_txtp_done": "    txtp引用WemID: {0} 个",
   "pipe_link_used": "    已在映射中导出(已过滤): {0} 个",
@@ -226,11 +224,10 @@
   "pipe_link_stat_filtered": "[*] 已在映射中导出(已过滤): {0}",
   "pipe_link_stat_remain": "[*] 过滤后WEM数: {0}",
   "pipe_link_stat_files": "[*] 在WemResWem中有文件: {0}",
-  "pipe_link_stat_bankres": "[*] 在BankRes中有引用: {0}",
+  "pipe_link_stat_bankres": "[*] 在 bank 中有引用: {0}",
   "pipe_link_stat_txtp": "[*] 在txtp中有引用: {0}",
   "pipe_link_saved": "[*] 结果已保存到: {0}",
   "pipe_link_write_fail": "写入 unused_wem_with_banks.csv 失败: {0}",
-
   "status_txtp_index_built": "txtp 索引已建立: {0} 个 WEM，{1} 个 txtp 文件",
   "status_txtp_index_done": "txtp 索引完成: {0} 个 WEM，{1} 个 txtp 文件",
   "status_txtp_dir_missing": "找不到 txtp 目录: {0}（请用 工具→路径设置 指定）",
@@ -241,8 +238,7 @@
   "status_outputdir_set": "音频导出目录已设置: {0}",
   "status_wemreswemdir_set": "Streaming WEM 目录已设置: {0}",
   "status_path_missing": "路径不存在: {0}",
-
-  "dlg_set_basedir": "选择项目根目录（内含 GraphSoundRes / WemResJson 等）",
+  "dlg_set_basedir": "选择项目根目录（内含 Extracted_Banks / WemResWem 等）",
   "dlg_set_outputdir": "选择音频导出目录",
   "dlg_set_wemreswemdir": "选择 Streaming WEM (.wem) 所在目录",
   "dlg_export_by_id_invalid": "以下输入无法解析为整数:\n{0}",
@@ -250,72 +246,61 @@
   "dlg_txtp_pick_title": "选择要播放的 txtp",
   "dlg_txtp_pick_hint": "WemID {0} 被 {1} 个 txtp 引用，请选择要播放的一个：",
   "dlg_reload_csv_after_tool": "已重新生成:\n{0}\n\n是否立即重新加载该 CSV？",
-
-  "about_text": "WEM Labeler v1.6 (WPF)\n\n用于标注缺失的 WEM 音频文件\n使用 vgmstream 进行实时音频预览\n\n配置文件: config.json，支持中英文切换\n\n「提取音频」页（直读游戏文件，无需 odradek.exe）:\n  ⓪ 导出资源（读 streaming_graph.core）\n  导出 WEM 音频（约 10GB）\n  ① 从 BankRes 提取 BNK\n  ② 用 wwiser 生成 TXTP\n  ③ 构建音频映射表\n  ④ 按映射表导出音频\n  分析未使用的 WEM / 重建 txtp 索引 / 按 Event ID 导出\n\n操作提示:\n  ↑ ↓    上一个/下一个文件 (自动保存)\n  Space  播放/停止音频\n  Ctrl+T 播放当前 WEM 所属的 txtp\n  Ctrl+S 保存当前标注\n  Enter  在标注框内按则保存",
+  "about_text": "WEM Labeler v1.7 (WPF)\n\n用于标注缺失的 WEM 音频文件\n使用 vgmstream 进行实时音频预览\n\n配置文件: config.json，支持中英文切换\n\n「提取音频」页（直读游戏文件，无需 odradek.exe，也不落任何资源 JSON）:\n  ⓪ 读游戏资源（写映射表链路 + wem_index.json + 直接导出 .bnk）\n  导出 WEM 音频（约 10GB）\n  ② 用 wwiser 生成 TXTP\n  ③ 富化音频映射表（txtp / WEM / bank）\n  ④ 按映射表导出音频\n  分析未使用的 WEM / 重建 txtp 索引 / 按 Event ID 导出\n\n操作提示:\n  ↑ ↓    上一个/下一个文件 (自动保存)\n  Space  播放/停止音频\n  Ctrl+T 播放当前 WEM 所属的 txtp\n  Ctrl+S 保存当前标注\n  Enter  在标注框内按则保存",
   "about_title": "关于",
   "btn_download_tools": "下载工具 (vgmstream + wwiser)",
   "btn_open_utils": "工具目录",
-  "dlg_python_missing": "没找到 Python 解释器。\n\n「② 用 wwiser 生成 TXTP」这一步需要 Python（程序会自动在 PATH 里找 python / py / python3）。请先安装 Python 并确保它在 PATH 里。",
+  "dlg_python_missing": "没找到 Python 解释器。\n\n期望位置：{0}\\python.exe\n\n点「下载工具」会自动下载并解压 python.org 的嵌入式 Python（约 13 MB），不需要你装 Python。",
   "status_wwiser_running": "wwiser 运行中... {0}",
-  "pipe_download_target": "[*] 下载目标目录: {0}",
+  "pipe_download_target": "工具下载目录: {0}",
   "pipe_download_vgmstream_ok": "[完成] vgmstream → {0}",
   "pipe_download_wwiser_ok": "[完成] wwiser → {0}",
   "pipe_summary_download": "工具下载完成，已放入 {0}",
   "pipe_wwiser_done": "[完成] 共生成 {0} 个 .txtp 到 {1}",
   "pipe_summary_txtp": "TXTP 生成完成: {0} 个 .txtp，输出到 {1}",
-
-
-  "status_wwiser_missing": "没有找到 wwiser.pyz: {0}",
-  "dlg_wwiser_missing": "没有找到 wwiser.pyz。\n\n是否现在自动下载到：\n{0}\n？",
-
+  "status_wwiser_missing": "找不到 wwiser.pyz（{0}）；点「下载工具」自动获取",
+  "dlg_wwiser_missing": "没找到 wwiser.pyz。\n\n期望位置：{0}\\wwiser.pyz\n\n现在就去「下载工具」自动下载 wwiser + wwnames.db3 + 嵌入式 Python 吗？",
   "status_vgm_downloading": "正在自动下载 vgmstream ...",
   "status_vgm_ready": "vgmstream 已就绪: {0}",
   "status_vgm_download_failed": "vgmstream 下载失败: {0}",
   "dlg_vgm_download_failed": "vgmstream 自动下载失败：\n{0}\n\n你也可以手动下载 vgmstream-win64.zip 解压到：\n{1}",
   "pipe_vgm_auto_download": "[*] vgmstream 未找到，自动下载到 {0} ...",
   "pipe_vgm_download_failed": "[!] vgmstream 下载失败: {0}",
-
-  "hint_need_basedir": "还没设置项目根目录。请点上方的「浏览...」选择你用 Odradek 导出资源的那一层文件夹（里面有 GraphSoundRes / BankRes / WemResJson 等）。标注音频那个标签页不受影响，可以直接用。",
+  "hint_need_basedir": "还没设置项目根目录。请点上方的「浏览...」选择项目根目录（里面有 Extracted_Banks / WemResWem，或者已经跑过 ⓪）。标注音频那个标签页不受影响，可以直接用。",
   "status_need_basedir": "还没设置项目根目录，请先在「提取音频」页点「浏览...」选择导出资源的文件夹",
-  "status_basedir_suspect": "已设为 {0}，但里面没找到 GraphSoundRes / BankRes / WemResJson / Extracted_Banks，请确认选对了文件夹",
-
+  "status_basedir_suspect": "已设为 {0}，但里面没找到 Extracted_Banks / WemResWem / sound_wem_mapping_export.json，请确认选对了文件夹",
   "btn_reload_csv": "重新加载",
   "btn_open_audio_dir": "打开音频目录",
   "status_no_audio_dir": "没有可打开的音频目录：请先加载 CSV，或在「提取音频」页指定 Streaming WEM 目录",
   "pipe_link_wemdir_missing": "Streaming WEM 目录不存在: {0}\n\n请先在「提取音频」页把它指到导出 .wem 的那个文件夹（否则 WemPath 列会是空的）",
   "pipe_link_preserved": "[*] 旧文件里的 {0} 个额外列已原样保留（{1} 行有值，共 {2} 个非空值）",
   "pipe_link_preserve_fail": "[!] 读取旧文件的标注列失败，将不保留: {0}",
-
   "btn_open_csv": "打开CSV...",
   "btn_open_wem_folder": "打开WEM文件夹...",
   "btn_open_txtp_preview": "打开txtp预览...",
   "btn_export_csv": "导出标注CSV...",
   "btn_export_wav_all": "导出已标注WAV...",
   "btn_set_vgmstream": "设置 vgmstream 路径...",
-
   "lbl_suffix_not_set": "（未设置）",
   "lbl_suffix_not_found": "（未找到）",
-
   "status_vgm_still_missing": "下载完成但仍未找到 vgmstream-cli.exe",
-
   "pipe_link_carried_rows": "[*] 另有 {0} 行旧数据（这些 WEM 这次不再是「未使用」）已连同原有信息原样追加在文件末尾",
-
   "lbl_path_game_root": "游戏根目录:",
   "btn_wem_audio_export": "导出 WEM 音频（约 10GB）",
   "dlg_wem_audio_title": "导出 WEM 音频",
   "dlg_wem_audio_size_warning": "WEM 原始音频体积约 10 GB。\n\n默认目录：\n{0}\n\n「是」= 存到默认目录；「否」= 自己选一个目录；「取消」= 不导出。",
   "dlg_wem_audio_choose": "选择 WEM 音频输出目录",
   "status_need_game_root": "还没指定游戏根目录",
-
-
-
   "btn_find_game": "自动查找",
   "status_game_not_found": "没找到 DS2 安装目录，请手动指定（含 DS2.exe 的那一层）",
   "status_game_found": "已找到游戏: {0}",
-  "pipe_odradek_summary": "导出完成: 新写 {0} 个 / 跳过 {1} 个 / 失败 {2} 个",
+  "pipe_odradek_summary": "⓪ 完成: GraphSound {0} 个 → {1} 条目 / bank {2} 个",
   "pipe_wem_audio_summary": "WEM 音频完成: 新写 {0} 个 → {1}",
   "btn_odradek_export": "⓪ 导出资源（直读游戏文件）",
   "dlg_set_game_root": "选择 DS2 游戏根目录（含 DS2.exe 的那一层）",
-
-  "hint_basedir_suspect": "项目根目录已设为 {0}，但里面没找到 GraphSoundRes / BankRes / WemResJson / Extracted_Banks —— 如果程序随后报找不到某项数据，多半是这里选错了层级。"
+  "hint_basedir_suspect": "项目根目录已设为 {0}，但里面没找到 Extracted_Banks / WemResWem / sound_wem_mapping_export.json —— 如果程序随后报找不到某项数据，多半是这里选错了层级。",
+  "pipe_unused_kept_extra": "（保留了 {0} 个额外列）",
+  "pipe_mapping_old_format": "旧格式的映射表（含 WwiseID_Value）：{0} —— 请重新跑一次 ⓪（读游戏资源）生成新格式",
+  "pipe_res_bank_wemids": "[*] bank 引用的 WemID: {0} 个",
+  "pipe_download_python_ok": "嵌入式 Python: {0}"
 }

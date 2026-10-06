@@ -14,7 +14,6 @@
   "menu_language": "Language(_L)",
   "menu_lang_zh": "中文",
   "menu_lang_en": "English",
-
   "tab_label": "Label Audio",
   "tab_extract": "Extract Audio",
   "gb_paths": "Paths",
@@ -29,7 +28,7 @@
   "btn_reset_paths": "Re-detect",
   "btn_export_by_id": "Export by Event ID",
   "btn_clear_log": "Clear Log",
-  "btn_extract_banks": "① Extract BNK from BankRes",
+  "btn_extract_banks": "1. Extract BNK from BankRes (folded into step 0)",
   "btn_generate_txtp": "② Generate TXTP with wwiser",
   "btn_build_mapping": "③ Build Audio Mapping",
   "btn_export_audio": "④ Export Audio from Mapping",
@@ -44,7 +43,6 @@
   "status_paths_reset": "Paths reset; project root: {0}",
   "status_job_busy": "A pipeline job is already running; wait for it or cancel it first",
   "dlg_job_running": "A pipeline job is still running. Exit anyway?",
-
   "btn_play": "Play",
   "btn_stop": "Stop",
   "chk_autoplay": "Auto-play on select",
@@ -63,13 +61,10 @@
   "lbl_wemres": "WemRes: {0}",
   "lbl_banks": "Banks: {0}",
   "lbl_wwiseid": "Size: {0}",
-
   "lbl_channel": "Channels: {0}",
-
   "src_found": "✓ {0} ({1})",
   "src_found_banks": "✓ {0} banks: {1}",
   "src_not_found": "✗ Not found",
-
   "status_idle": "Please open a CSV file via File→Open CSV",
   "status_loading": "Loading CSV...",
   "status_file_not_found": "File not found: {0}",
@@ -93,10 +88,8 @@
   "status_vgmstream_set": "vgmstream path set: {0}",
   "status_export": "Exported: {0} | {1} entries, {2} labeled",
   "status_export_fail": "Export failed: {0}",
-
   "title": "WEM Labeler - {0} [{1} files]",
   "title_no_file": "WEM Labeler",
-
   "dlg_resume": "Last opened CSV:\n{0}\n\nReload it?",
   "dlg_resume_title": "Resume Session",
   "dlg_unsaved": "Current label is unsaved. Exit anyway?",
@@ -138,7 +131,6 @@
   "lbl_unavailable": "(not written)",
   "dlg_file_not_found": "File not found:\n{0}",
   "dlg_csv_load_fail": "CSV load failed:\n{0}",
-
   "dlg_open_csv": "Open WEM CSV File",
   "dlg_open_wem_folder": "Select WEM Folder",
   "dlg_open_wem_json_folder": "Select folder with matching .json files",
@@ -152,15 +144,12 @@
   "filter_txtp": "txtp files (*.txtp)|*.txtp|All files (*.*)|*.*",
   "filter_vgmstream": "vgmstream-cli.exe|vgmstream-cli.exe|Executable (*.exe)|*.exe|All files (*.*)|*.*",
   "filter_export": "CSV files (*.csv)|*.csv",
-
-
   "btn_play_owner_txtp": "Play owning txtp (Ctrl+T)",
   "btn_ok": "OK",
   "btn_cancel": "Cancel",
   "btn_close": "Close",
   "btn_copy_log": "Copy Log",
   "chk_refresh_wem_cache": "Ignore wem_map_cache.json and rebuild the WEM index",
-
   "pipe_running": "Running: {0}",
   "pipe_cancelling": "Cancelling...",
   "pipe_cancelled": "Cancelled",
@@ -171,15 +160,27 @@
   "pipe_summary_mapping_export": "Full pipeline done: {0} mapping entries, {1} exported, {2} failed, {3} skipped",
   "pipe_summary_byid": "Export by ID done: {0} success, {1} failed, {2} without a txtp",
   "pipe_summary_unused": "Unused WEM analysis done: {0} rows written to {1}",
-
   "pipe_bnk_start": "Decoding BankData from BankRes JSON and repairing Wwise alignment...",
   "pipe_bnk_done": "[Done] Repaired and extracted {0} .bnk files.",
   "pipe_bnk_b64_fail": "Base64 decode failed: {0}",
-
-  "pipe_mapping_start": "[Phase 1] Building the audio mapping table...",
+  "pipe_res_loading_graph": "Loading the streaming graph...",
+  "pipe_res_wem_index": "Building the WemID -> WwiseWemResource coordinate index...",
+  "pipe_res_wem_index_done": "[*] wem_index: {0} WemIDs -> {1}",
+  "pipe_res_banks": "Writing WwiseBankResource.BankData straight to .bnk...",
+  "pipe_res_banks_done": "[*] banks: wrote {0} of {1} -> {2}",
+  "pipe_res_done": "[Done] ⓪ {0}",
+  "pipe_wemindex_missing": "[!] {0} not found: run ⓪ (read game resources) first",
+  "pipe_mapping_chain_loaded": "[*] Loaded the chain written by ⓪: {0} entries <- {1}",
+  "pipe_mapping_no_chain": "[!] {0} is missing or empty: run ⓪ (read game resources) first",
+  "pipe_mapping_chain_bad": "[!] Failed to parse the chain JSON: {0}",
+  "pipe_mapping_start": "[Phase 3] Enriching the audio mapping table (txtp / WEM / bank)...",
   "pipe_mapping_indexing": "Building txtp / WEM / bank indexes...",
   "pipe_mapping_index_summary": "[*] TXTP index: {0} | WEM index: {1} | Bank index: {2}",
   "pipe_mapping_scanned": "[*] Found {0} GraphSoundResource files",
+  "pipe_mapping_chain": "Resolving the GraphSound -> WwiseID chain straight from the game data...",
+  "pipe_mapping_game_root": "Game root: {0}",
+  "pipe_mapping_no_game": "[!] No Death Stranding 2 installation found (the folder containing DS2.exe); cannot build the chain from game data",
+  "pipe_mapping_chain_report": "[*] Chain report: {0}",
   "pipe_mapping_done": "[Done] Mapping build complete!",
   "pipe_mapping_total": "[*] Total resources: {0}",
   "pipe_mapping_skip_err": "[*] Skipped: {0} | Errors: {1}",
@@ -191,7 +192,6 @@
   "pipe_unused_recorded": "[*] Unused WEM records: {0} ({1} files)",
   "pipe_unused_fail": "Failed to write the unused WEM CSV: {0}",
   "pipe_csv_append_fail": "Failed to append CSV: {0}",
-
   "pipe_export_start": "[Phase 2] Exporting audio from the mapping...",
   "pipe_export_no_mapping": "[!] Mapping file not found; run \"Build Audio Mapping\" first",
   "pipe_export_mapping_broken": "[!] Mapping file is empty or corrupt: {0}",
@@ -200,7 +200,6 @@
   "pipe_export_index": "[*] WEM index: {0} | already present: {1} | already processed: {2}",
   "pipe_export_done": "[Done] Audio export complete!",
   "pipe_export_summary": "[*] Success: {0} | Failed: {1} | Skipped: {2} | Streaming records: {3}",
-
   "pipe_byid_indexing": "Building the WEM ID → WemResWem index...",
   "pipe_byid_index_done": "[*] WEM index: {0} entries",
   "pipe_byid_parse_fail": "Failed to parse {0}: {1}",
@@ -210,13 +209,12 @@
   "pipe_byid_success": " - Succeeded: {0}",
   "pipe_byid_failed": " - Failed: {0}",
   "pipe_byid_not_found": " - No txtp found for: {0}",
-
-  "pipe_link_start": "Building the WEM index from WemResJson and cross-referencing BankRes (WemIDs), txtp and WemResWem",
+  "pipe_link_start": "Building the WEM index from wem_index.json and cross-referencing the bank media table (banks.xml), txtp and WemResWem",
   "pipe_link_indexing": "Building indexes...",
-  "pipe_link_wemresjson": "    WemResJson: {0}",
+  "pipe_link_wemresjson": "    wem_index: {0}",
   "pipe_link_wemreswem": "    WemResWem files: {0}",
-  "pipe_link_bankres": "Reading WemIDs from BankRes...",
-  "pipe_link_bankres_done": "    WemIDs referenced by BankRes: {0}",
+  "pipe_link_bankres": "Reading the media table from banks.xml...",
+  "pipe_link_bankres_done": "    WemIDs referenced by a bank: {0}",
   "pipe_link_txtp": "Scanning txtp references...",
   "pipe_link_txtp_done": "    WemIDs referenced by txtp: {0}",
   "pipe_link_used": "    Already exported in the mapping (filtered out): {0}",
@@ -226,11 +224,10 @@
   "pipe_link_stat_filtered": "[*] Already exported in the mapping (filtered out): {0}",
   "pipe_link_stat_remain": "[*] WEMs after filtering: {0}",
   "pipe_link_stat_files": "[*] Present in WemResWem: {0}",
-  "pipe_link_stat_bankres": "[*] Referenced by BankRes: {0}",
+  "pipe_link_stat_bankres": "[*] Referenced by a bank: {0}",
   "pipe_link_stat_txtp": "[*] Referenced by txtp: {0}",
   "pipe_link_saved": "[*] Result saved to: {0}",
   "pipe_link_write_fail": "Failed to write unused_wem_with_banks.csv: {0}",
-
   "status_txtp_index_built": "Txtp index built: {0} WEMs across {1} txtp files",
   "status_txtp_index_done": "Txtp index ready: {0} WEMs across {1} txtp files",
   "status_txtp_dir_missing": "Txtp folder not found: {0} (set it via Tools→Paths)",
@@ -241,8 +238,7 @@
   "status_outputdir_set": "Audio output folder set: {0}",
   "status_wemreswemdir_set": "Streaming WEM folder set: {0}",
   "status_path_missing": "Path does not exist: {0}",
-
-  "dlg_set_basedir": "Select the project root (containing GraphSoundRes / WemResJson etc.)",
+  "dlg_set_basedir": "Select the project root (containing Extracted_Banks / WemResWem etc.)",
   "dlg_set_outputdir": "Select the audio output folder",
   "dlg_set_wemreswemdir": "Select the folder holding streaming .wem files",
   "dlg_export_by_id_invalid": "These values are not valid integers:\n{0}",
@@ -250,73 +246,61 @@
   "dlg_txtp_pick_title": "Select the txtp to play",
   "dlg_txtp_pick_hint": "WemID {0} is referenced by {1} txtp files; pick one to play:",
   "dlg_reload_csv_after_tool": "Regenerated:\n{0}\n\nReload this CSV now?",
-
-  "about_text": "WEM Labeler v1.6 (WPF)\n\nLabel missing WEM audio files\nLive preview via vgmstream\n\nConfig: config.json, UI supports Chinese/English\n\n\"Extract Audio\" tab (reads game files directly, no odradek.exe):\n  0. Export assets (reads streaming_graph.core)\n  Export WEM audio (~10GB)\n  1. Extract BNK from BankRes\n  2. Generate TXTP with wwiser\n  3. Build audio mapping\n  4. Export audio from mapping\n  Analyze unused WEM / Rebuild txtp index / Export by Event ID\n\nShortcuts:\n  Up/Down  previous/next file (auto-save)\n  Space    play/stop audio\n  Ctrl+T   play the txtp this WEM belongs to\n  Ctrl+S   save current label\n  Enter    save while focused in the label box",
+  "about_text": "WEM Labeler v1.7 (WPF)\n\nLabel missing WEM audio files\nLive preview via vgmstream\n\nConfig: config.json, UI supports Chinese/English\n\n\"Extract Audio\" tab (reads game files directly, no odradek.exe, no per-object resource JSON):\n  0. Read game resources (chain + wem_index.json + .bnk)\n  Export WEM audio (~10GB)\n  2. Generate TXTP with wwiser\n  3. Enrich the audio mapping (txtp/WEM/bank)\n  4. Export audio from mapping\n  Analyze unused WEM / Rebuild txtp index / Export by Event ID\n\nShortcuts:\n  Up/Down  previous/next file (auto-save)\n  Space    play/stop audio\n  Ctrl+T   play the txtp this WEM belongs to\n  Ctrl+S   save current label\n  Enter    save while focused in the label box",
   "about_title": "About",
   "btn_download_tools": "Download tools (vgmstream + wwiser)",
   "btn_open_utils": "Utils dir",
-  "dlg_python_missing": "Python interpreter not found.\n\nStep 2 (generate TXTP with wwiser) needs Python; the app looks for python / py / python3 on PATH automatically. Please install Python and make sure it is on PATH.",
+  "dlg_python_missing": "No Python interpreter found.\n\nExpected at: {0}\\\\python.exe\n\nDownload tools will fetch and unpack the python.org embeddable build (~13 MB) for you.",
   "status_wwiser_running": "wwiser running... {0}",
-  "pipe_download_target": "[*] Download target: {0}",
+  "pipe_download_target": "Tools target: {0}",
   "pipe_download_vgmstream_ok": "[Done] vgmstream → {0}",
   "pipe_download_wwiser_ok": "[Done] wwiser → {0}",
   "pipe_summary_download": "Tools downloaded into {0}",
   "pipe_wwiser_done": "[Done] Generated {0} .txtp into {1}",
   "pipe_summary_txtp": "TXTP generation done: {0} .txtp files in {1}",
-
-
-  "status_wwiser_missing": "wwiser.pyz not found: {0}",
-  "dlg_wwiser_missing": "wwiser.pyz was not found.\n\nDownload it into:\n{0}\nnow?",
-
+  "status_wwiser_missing": "wwiser.pyz not found ({0}); use the Download tools button",
+  "dlg_wwiser_missing": "wwiser.pyz was not found.\n\nExpected at: {0}\\\\wwiser.pyz\n\nDownload wwiser + wwnames.db3 + the embedded Python now?",
   "status_vgm_downloading": "Auto-downloading vgmstream ...",
   "status_vgm_ready": "vgmstream ready: {0}",
   "status_vgm_download_failed": "vgmstream download failed: {0}",
   "dlg_vgm_download_failed": "Failed to auto-download vgmstream:\n{0}\n\nYou can also download vgmstream-win64.zip manually and extract it into:\n{1}",
   "pipe_vgm_auto_download": "[*] vgmstream not found; downloading it into {0} ...",
   "pipe_vgm_download_failed": "[!] vgmstream download failed: {0}",
-
-
-  "hint_need_basedir": "The project root is not set yet. Click \"Browse...\" above and pick the folder you exported resources into with Odradek (the one containing GraphSoundRes / BankRes / WemResJson). The Label Audio tab is unaffected and works as-is.",
+  "hint_need_basedir": "The project root is not set yet. Click \"Browse...\" above and pick the project root (containing Extracted_Banks / WemResWem, or already processed by step 0). The Label Audio tab is unaffected and works as-is.",
   "status_need_basedir": "Project root is not set; pick the exported-resources folder via \"Browse...\" on the Extract Audio tab",
-  "status_basedir_suspect": "Set to {0}, but no GraphSoundRes / BankRes / WemResJson / Extracted_Banks found inside; please double-check the folder",
-
+  "status_basedir_suspect": "Set to {0}, but no Extracted_Banks / WemResWem / sound_wem_mapping_export.json found inside; please double-check the folder",
   "btn_reload_csv": "Reload",
   "btn_open_audio_dir": "Open audio folder",
   "status_no_audio_dir": "No audio folder to open: load a CSV first, or set the Streaming WEM folder on the Extract Audio tab",
   "pipe_link_wemdir_missing": "Streaming WEM folder does not exist: {0}\n\nPoint it at the folder holding the exported .wem files on the Extract Audio tab (otherwise the WemPath column will be empty)",
   "pipe_link_preserved": "[*] Kept {0} extra column(s) from the old file as-is ({1} rows with values, {2} non-empty values)",
   "pipe_link_preserve_fail": "[!] Failed to read the old file's label columns; they will not be preserved: {0}",
-
   "btn_open_csv": "Open CSV...",
   "btn_open_wem_folder": "Open WEM folder...",
   "btn_open_txtp_preview": "Open txtp preview...",
   "btn_export_csv": "Export labels CSV...",
   "btn_export_wav_all": "Export labeled WAV...",
   "btn_set_vgmstream": "Set vgmstream path...",
-
   "lbl_suffix_not_set": " (not set)",
   "lbl_suffix_not_found": " (not found)",
-
   "status_vgm_still_missing": "download finished but vgmstream-cli.exe is still missing",
-
   "pipe_link_carried_rows": "[*] {0} row(s) from the old file (no longer unused) were carried over as-is at the end of the file",
-
   "lbl_path_game_root": "Game root:",
   "btn_wem_audio_export": "Export WEM audio (~10GB)",
   "dlg_wem_audio_title": "Export WEM audio",
   "dlg_wem_audio_size_warning": "Raw WEM audio is about 10 GB.\n\nDefault folder:\n{0}\n\nYes = use the default folder; No = pick another folder; Cancel = abort.",
   "dlg_wem_audio_choose": "Choose the WEM audio output folder",
   "status_need_game_root": "Game root is not set",
-
-
-
   "btn_find_game": "Auto-find",
   "status_game_not_found": "DS2 install not found; please pick the folder containing DS2.exe",
   "status_game_found": "Found game: {0}",
-  "pipe_odradek_summary": "Export finished: {0} written / {1} skipped / {2} failed",
+  "pipe_odradek_summary": "⓪ done: {0} GraphSound(s) -> {1} entry/entries / {2} bank(s)",
   "pipe_wem_audio_summary": "WEM audio finished: {0} written -> {1}",
   "btn_odradek_export": "⓪ Export assets (read game files)",
   "dlg_set_game_root": "Select the DS2 game root (the folder containing DS2.exe)",
-
-  "hint_basedir_suspect": "Project root is set to {0}, but it contains none of GraphSoundRes / BankRes / WemResJson / Extracted_Banks - if a later step complains about missing data, this level is probably wrong."
+  "hint_basedir_suspect": "Project root is set to {0}, but it contains none of Extracted_Banks / WemResWem / sound_wem_mapping_export.json - if a later step complains about missing data, this level is probably wrong.",
+  "pipe_unused_kept_extra": " (kept {0} extra column(s))",
+  "pipe_mapping_old_format": "The mapping file is in the old format (still has WwiseID_Value): {0} - re-run step 0 to regenerate it",
+  "pipe_res_bank_wemids": "[*] WemIDs referenced by a bank: {0}",
+  "pipe_download_python_ok": "Embedded Python: {0}"
 }

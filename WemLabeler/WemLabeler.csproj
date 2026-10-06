@@ -37,6 +37,11 @@
     <None Update="README.md">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- wwiser 的 CLI 启动脚本：embed 版 Python 没有 tkinter，而 wwiser.pyz 的 __main__
+         会无条件 import wwiser.wgui，所以必须走这个脚本（见文件头注释）。 -->
+    <None Update="utils\wwiser_cli.py">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

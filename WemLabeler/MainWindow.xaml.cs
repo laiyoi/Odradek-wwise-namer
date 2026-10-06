@@ -173,7 +173,6 @@ public partial class MainWindow : Window
         BtnOpenOutputDir.Content = L("btn_open");
         BtnOpenWemResWemDir.Content = L("btn_open");
         BtnResetPaths.Content = L("btn_reset_paths");
-        BtnExtractBanks.Content = L("btn_extract_banks");
         BtnGenerateTxtp.Content = L("btn_generate_txtp");
         BtnBuildMapping.Content = L("btn_build_mapping");
         BtnExportAudio.Content = L("btn_export_audio");
@@ -477,8 +476,15 @@ public partial class MainWindow : Window
     {
         var wemFolder = PickFolder(Locale.S("dlg_open_wem_folder"), EnsurePaths().WemResWemDir);
         if (wemFolder == null) return;
-        var jsonFolder = PickFolder(Locale.S("dlg_open_wem_json_folder"), EnsurePaths().WemResJsonDir);
-        if (jsonFolder == null) return;
+
+        // WemID / 时长从 ⓪ 写的 wem_index.json（WemID ↔ 对象坐标）反查，不再需要 WemResJson。
+        // 列与「分析未使用的 WEM」保持一致：不写 IsStreaming（本作恒为 true，无信息量）。
+        var paths = EnsurePaths();
+        var coordToWem = new Dictionary<string, (string WemId, double Length)>(StringComparer.Ordinal);
+        foreach (var (id, item) in AudioPipeline.LoadWemIndexItems(paths))
+            if (!string.IsNullOrEmpty(item.Coord))
+                coordToWem[item.Coord] = (id.ToString(), item.LengthSeconds);
+
         // Pick CSV save location
         var dlg = new SaveFileDialog
         {
@@ -516,25 +522,11 @@ public partial class MainWindow : Window
                         coord = $"{m.Groups[1].Value}:{m.Groups[2].Value}";
                         jsonFile = $"WwiseWemResource_{m.Groups[1].Value}_{m.Groups[2].Value}.json";
                         wemFile = $"{name}.wem";
-                        // Try to read JSON to get WemID and duration
-                        var jsonPath = Path.Combine(jsonFolder, jsonFile);
-                        if (File.Exists(jsonPath))
+                        // WemID / 时长来自 wem_index.json（没有就跑一次 ⓪），查不到时 WemID 退回坐标数字
+                        if (coordToWem.TryGetValue(coord, out var info))
                         {
-                            try
-                            {
-                                var json = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(jsonPath));
-                                var root = json.RootElement;
-                                if (root.TryGetProperty("WemID", out var wemIdEl))
-                                    wemId = wemIdEl.GetInt64().ToString();
-                                else
-                                    wemId = coord.Replace(":", "");
-                                if (root.TryGetProperty("mLengthInSeconds", out var durEl) && durEl.GetDouble() > 0)
-                                    duration = durEl.GetDouble();
-                            }
-                            catch
-                            {
-                                wemId = coord.Replace(":", "");
-                            }
+                            wemId = info.WemId;
+                            if (info.Length > 0) duration = info.Length;
                         }
                         else
                         {
@@ -543,31 +535,17 @@ public partial class MainWindow : Window
                     }
                     else
                     {
-                        // Fallback: use file hash, try JSON by filename
+                        // Fallback: use file hash; no WemID source for non-standard names
                         wemId = Math.Abs(wemPath.GetHashCode()).ToString();
                         coord = "";
                         jsonFile = $"{name}.json";
                         wemFile = $"{name}.wem";
-                        var jsonPath = Path.Combine(jsonFolder, jsonFile);
-                        if (File.Exists(jsonPath))
-                        {
-                            try
-                            {
-                                var json = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(jsonPath));
-                                var root = json.RootElement;
-                                if (root.TryGetProperty("WemID", out var wemIdEl))
-                                    wemId = wemIdEl.GetInt64().ToString();
-                                if (root.TryGetProperty("mLengthInSeconds", out var durEl) && durEl.GetDouble() > 0)
-                                    duration = durEl.GetDouble();
-                            }
-                            catch { }
-                        }
                     }
                     var size = fi.Length.ToString();
                     var durStr = duration >= 0 ? (duration >= 3600
                         ? $"{(int)(duration / 3600)}:{(int)(duration % 3600 / 60):D2}:{(int)(duration % 60):D2}.{(int)(duration * 1000 % 1000):D3}"
                         : $"{(int)(duration / 60)}:{(int)(duration % 60):D2}.{(int)(duration * 1000 % 1000):D3}") : "";
-                    // 不再写 IsStreaming 列（与「分析未使用的 WEM」产出的格式保持一致）
+                    // 列序与表头一致：WemID,Coord,JsonFile,WemSize,WemFile,WemPath,FoundInBankRes,TxtpFiles,Label,Duration,Channel
                     writer.WriteLine($"{EscapeCsv(wemId)},{EscapeCsv(coord)},{EscapeCsv(jsonFile)},{EscapeCsv(size)},{EscapeCsv(wemFile)},{EscapeCsv(wemPath)},,,,{EscapeCsv(durStr)},");
                 }
                 Dispatcher.Invoke(() =>
@@ -1948,14 +1926,15 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// 回写 CSV：按原表头逐列写，并补上 Label / Duration / Channel。
-    /// 注意 IsStreaming 这一列**不再写出**（和「分析未使用的 WEM」保持一致；
-    /// 读取时仍然兼容含该列的旧文件）。
+    /// 除 <c>IsStreaming</c> 外**不删任何列** —— 表里没见过的列由
+    /// <see cref="WemEntry.ExtraColumns"/> 原样带回，不会丢。
+    /// （IsStreaming 是本作里恒为 true 的无信息列，明确不要；读取旧文件时仍然兼容。）
     /// </summary>
     private void WriteCsvFile(string path)
     {
         if (_entries.Count == 0) return;
 
-        // 过滤掉不再产出的列（读取时仍兼容）
+        // 只过滤明确不要的那一列，其余原样保留
         var columns = _originalHeader
             .Where(h => !h.Equals("IsStreaming", StringComparison.OrdinalIgnoreCase))
             .ToList();

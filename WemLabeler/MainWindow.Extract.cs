@@ -121,7 +121,7 @@ public partial class MainWindow
         if (_txtpRepo == null ||
             !string.Equals(_txtpRepoBaseDir, paths.TxtpDir, StringComparison.OrdinalIgnoreCase))
         {
-            _txtpRepo = new TxtpRepository(paths.TxtpDir, paths.WemResJsonDir, paths.WemResWemDir);
+            _txtpRepo = new TxtpRepository(paths.TxtpDir, paths.WemIndexJson, paths.WemResWemDir);
             _txtpRepoBaseDir = paths.TxtpDir;
         }
         return _txtpRepo;
@@ -137,7 +137,7 @@ public partial class MainWindow
             if (_txtpRepo == null ||
                 !string.Equals(_txtpRepoBaseDir, paths.TxtpDir, StringComparison.OrdinalIgnoreCase))
             {
-                _txtpRepo = new TxtpRepository(paths.TxtpDir, paths.WemResJsonDir, paths.WemResWemDir);
+                _txtpRepo = new TxtpRepository(paths.TxtpDir, paths.WemIndexJson, paths.WemResWemDir);
                 _txtpRepoBaseDir = paths.TxtpDir;
             }
             return _txtpRepo;
@@ -337,11 +337,12 @@ public partial class MainWindow
     /// 流程：找 odradek.exe → 找游戏根目录 → 找并解析 links-*.db → 组目标清单 → 分批导出 → 按文件名归类。
     /// </summary>
     /// <summary>
-    /// ⓪ 直接读游戏文件导出全部资源。
+    /// ⓪ 直接读游戏文件，把后面几步需要的东西一次写出来。
     ///
-    /// 流程：找游戏根目录 → 打开 streaming_graph.core → 按类型搜索对象（纯元数据）
-    /// → 逐组反序列化 → 写 odradek 兼容 JSON 到各处目录。
-    /// **不需要 odradek.exe，也不需要 links-*.db。**
+    /// 流程：找游戏根目录 → 打开 streaming_graph.core → 用纯元数据 + 按需读组解析
+    /// GraphSound → GraphProgram → NodeConstants → WwiseID 链路，直接写
+    /// sound_wem_mapping_export.json（链部分）、wem_index.json，并把 bank 直接落成 .bnk。
+    /// **不再落任何按对象的资源 JSON，也不需要 odradek.exe / links-*.db。**
     /// </summary>
     private void BtnOdradekExport_Click(object sender, RoutedEventArgs e)
     {
@@ -366,8 +367,8 @@ public partial class MainWindow
         StartExtractJob(Locale.S("btn_odradek_export"), (progress, log, ct) =>
         {
             var paths = EnsurePaths();
-            var summary = OdradekExporter.ExportJson(rootFound, paths, progress, log, ct);
-            var text = Locale.S("pipe_odradek_summary", summary.Written, summary.Skipped, summary.Failed);
+            var summary = OdradekExporter.ExportResources(rootFound, paths, progress, log, ct);
+            var text = Locale.S("pipe_odradek_summary", summary.Sounds, summary.Entries, summary.Banks);
             AudioPipeline.SafeLog(log, text);
             return text;
         });
@@ -732,7 +733,7 @@ public partial class MainWindow
         BtnCancelJob.IsEnabled = busy;
         foreach (var button in new[]
                  {
-                     BtnDownloadTools, BtnExtractBanks, BtnGenerateTxtp, BtnBuildMapping,
+                     BtnDownloadTools, BtnGenerateTxtp, BtnBuildMapping,
                      BtnExportAudio, BtnUnusedWem, BtnRebuildTxtpIndex, BtnExportById
                  })
         {
@@ -790,17 +791,6 @@ public partial class MainWindow
 
     #region 提取音频页：各操作按钮
 
-    private void BtnExtractBanks_Click(object sender, RoutedEventArgs e)
-    {
-        var paths = EnsurePaths();
-        if (!EnsureProjectRoot()) return;
-        StartExtractJob(Locale.S("btn_extract_banks"), (progress, log, ct) =>
-        {
-            var count = AudioPipeline.ExtractBanks(paths, progress, log, ct);
-            return Locale.S("pipe_summary_bnk", count, paths.ExtractedBanksDir);
-        });
-    }
-
     private void BtnDownloadTools_Click(object sender, RoutedEventArgs e)
     {
         StartExtractJob(Locale.S("btn_download_tools"), (progress, log, ct) =>
@@ -816,10 +806,16 @@ public partial class MainWindow
             var vgmExe = ToolLocator.FindVgmstreamCli() ?? vgmDir;
             log(Locale.S("pipe_download_vgmstream_ok", vgmExe));
 
-            // wwiser：最新 release 的 wwiser.pyz（单文件，命令行可直接跑）
+            // wwiser：wwiser.pyz + wwnames.db3（必须同目录，否则 gamesync 只会写成裸 hash）
             var wwiserPyz = ToolLocator.DownloadWwiserAsync(log, reporter, ct)
                 .GetAwaiter().GetResult();
             log(Locale.S("pipe_download_wwiser_ok", wwiserPyz));
+
+            // 嵌入式 Python：python.org 的 embed-amd64 → utils\python
+            // （wwiser.pyz 需要解释器；嵌入式包不含 tkinter，所以走 utils\wwiser_cli.py 绕开 GUI）
+            var pythonExe = ToolLocator.DownloadPythonEmbeddedAsync(log, reporter, ct)
+                .GetAwaiter().GetResult();
+            log(Locale.S("pipe_download_python_ok", pythonExe));
 
             Dispatcher.Invoke(RefreshExtractPaths);
             return Locale.S("pipe_summary_download", ToolLocator.UtilsDir);
@@ -828,6 +824,7 @@ public partial class MainWindow
 
     private void BtnGenerateTxtp_Click(object sender, RoutedEventArgs e)
     {
+        if (!EnsureProjectRoot()) return;
         var paths = EnsurePaths();
 
         var wwiser = ToolLocator.FindWwiserPyz();
@@ -840,16 +837,15 @@ public partial class MainWindow
             return;
         }
 
-        // wwiser.pyz 是 Python zipapp，需要解释器；不做 UI 配置，直接在 PATH 上找
+        // 优先用 utils 下的嵌入式 Python，其次 PATH 上的系统 Python
         var python = ToolLocator.FindPython();
         if (python == null)
         {
-            MessageBox.Show(this, Locale.S("dlg_python_missing"),
+            MessageBox.Show(this, Locale.S("dlg_python_missing", ToolLocator.PythonDir),
                 Locale.S("dlg_vgmstream_missing_title"), MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
-        if (!EnsureProjectRoot()) return;
         StartExtractJob(Locale.S("btn_generate_txtp"), (progress, log, ct) =>
         {
             var count = WwiserRunner.GenerateTxtp(paths, python, wwiser, progress, log, ct);

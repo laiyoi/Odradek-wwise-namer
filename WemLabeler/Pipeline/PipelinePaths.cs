@@ -29,15 +29,17 @@ public sealed class PipelinePaths
     public string? OutputDirOverride { get; }
     public string? ExportByIdDirOverride { get; }
 
-    // --- 输入目录（与 README 步骤 1 的导出路径一致）---
+    // --- 输入目录 ---
+    //
+    // 这里**没有资源 JSON 目录了**。原先的 BankRes / GraphSoundRes / GraphPgmRes / NodeConstRes /
+    // WwiseID / WemResJson 六个目录全部取消：
+    //   * 链路（GraphSound → GraphProgram → NodeConstants → WwiseID）由 SoundChainResolver
+    //     直接从游戏数据解出；
+    //   * bank 由 ⓪ 直接从游戏数据写成 .bnk（省掉「从 BankRes 提 BNK」那一步）；
+    //   * WemID ↔ .wem 的对应由 ⓪ 写的 wem_index.json 提供。
+    // 于是中间产物只剩两类：提取出来的 bank（含 txtp）和提取出来的 wem。
 
-    public string BankResDir => Combine("BankRes");
-    public string GraphSoundResDir => Combine("GraphSoundRes");
-    public string GraphPgmResDir => Combine("GraphPgmRes");
-    public string NodeConstResDir => Combine("NodeConstRes");
-    public string WwiseIdDir => Combine("WwiseID");
-    public string WemResJsonDir => Combine("WemResJson");
-
+    /// <summary>提取出来的 <c>*.bnk</c>（⓪ 直接写），以及它下面的 <c>txtp/</c>。</summary>
     public string ExtractedBanksDir => Combine("Extracted_Banks");
     public string BanksXml => Path.Combine(ExtractedBanksDir, "banks.xml");
 
@@ -58,11 +60,24 @@ public sealed class PipelinePaths
     /// <summary>export_by_id.py 的输出目录。</summary>
     public string ByIdOutputDir => ExportByIdDirOverride ?? Path.Combine(BaseDir, "Decoded_Audio_Split");
 
-    public string MappingJson => Combine("sound_wem_mapping_export.json");
+    public string MappingJson => MappingJsonOverride ?? Combine("sound_wem_mapping_export.json");
+    /// <summary>⓪ 从游戏数据写出的 <c>WemID → 组:下标</c> 索引（顶替原来 7,838 个 WemResJson）。</summary>
+    public string WemIndexJson => Combine("wem_index.json");
     public string ProgressFile => Combine("export_progress.json");
     public string StreamingCsv => Combine("streaming_wem_map.csv");
     public string MissingWemCsv => Combine("missing_wem_files.csv");
     public string MappingLog => Combine("mapping_build.log");
+    /// <summary>「直接从游戏数据跳链」这一步的报告（总数 / 产出条目 / 缺失明细）。</summary>
+    public string ChainReport => ChainReportOverride ?? Combine("soundmap_report.txt");
+
+    /// <summary>
+    /// 覆盖 mapping JSON 的输出路径。只给命令行/对比测试用 —— 默认值就是仓库里的基准文件
+    /// （sound_wem_mapping_export.json），直接跑会把基准覆盖掉。
+    /// </summary>
+    public string? MappingJsonOverride { get; set; }
+
+    /// <summary>覆盖链路报告的输出路径，用途同上。</summary>
+    public string? ChainReportOverride { get; set; }
     public string UnusedWemCsv => Combine("unused_wem_with_banks.csv");
     public string WemMapCache => Combine("wem_map_cache.json");
 
@@ -70,16 +85,12 @@ public sealed class PipelinePaths
 
     /// <summary>
     /// 把流水线要用的各个目录建出来。
-    /// 这些目录（GraphSoundRes / BankRes / WemResJson / … / Extracted_Banks）**都是本程序的产物**，
-    /// 所以不该拿它们是否存在来判断「用户选的目录对不对」，更不该要求用户先手工建好。
+    /// 中间产物只剩两类（提取出来的 bank、提取出来的 wem），其余都是本程序自己的输出目录 ——
+    /// 它们**都是本程序的产物**，所以不该拿它们是否存在来判断「用户选的目录对不对」。
     /// </summary>
     public void EnsureDirectories()
     {
-        foreach (var dir in new[]
-                 {
-                     BaseDir, BankResDir, GraphSoundResDir, GraphPgmResDir,
-                     NodeConstResDir, WwiseIdDir, WemResJsonDir, ExtractedBanksDir
-                 })
+        foreach (var dir in new[] { BaseDir, ExtractedBanksDir, WemResWemDir })
         {
             if (string.IsNullOrWhiteSpace(dir)) continue;
             try { Directory.CreateDirectory(dir); } catch { }
@@ -91,15 +102,22 @@ public sealed class PipelinePaths
     /// <summary>
     /// 配置里的路径是否指向一个看起来像项目根目录的位置。
     /// 用作「有没有选对文件夹」的判定：真实用户从别处运行 exe 时探测不到，
-    /// 必须靠用户自己指到导出资源的那一层。
+    /// 必须靠用户自己指到那一层。
+    /// 判定用的是**本程序产物里的稳定名字**（不再是那几个已取消的资源 JSON 目录），
+    /// 同时保留对旧目录的识别，这样老用户的配置不会因为升级而失效。
     /// </summary>
     public static bool LooksLikeBaseDir(string? dir)
     {
         if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir)) return false;
-        return Directory.Exists(Path.Combine(dir, "GraphSoundRes"))
+        return Directory.Exists(Path.Combine(dir, "Extracted_Banks"))
+            || Directory.Exists(Path.Combine(dir, "WemResWem"))
+            || File.Exists(Path.Combine(dir, "sound_wem_mapping_export.json"))
+            || File.Exists(Path.Combine(dir, "wem_index.json"))
+            || File.Exists(Path.Combine(dir, "unused_wem_with_banks.csv"))
+            // 旧布局：升级前留下的目录，仍然认
+            || Directory.Exists(Path.Combine(dir, "GraphSoundRes"))
             || Directory.Exists(Path.Combine(dir, "BankRes"))
-            || Directory.Exists(Path.Combine(dir, "WemResJson"))
-            || Directory.Exists(Path.Combine(dir, "Extracted_Banks"));
+            || Directory.Exists(Path.Combine(dir, "WemResJson"));
     }
 
     /// <summary>

@@ -23,8 +23,6 @@ public static partial class AudioPipeline
 {
     private static readonly Regex RefPattern = new(@"<ref to\s+(\d+):(\d+)>", RegexOptions.Compiled);
     private static readonly Regex WemFilePattern = new(@"WwiseWemResource_(\d+)_(\d+)\.wem$", RegexOptions.Compiled);
-    private static readonly Regex WemResJsonPattern = new(@"WwiseWemResource_(\d+)_(\d+)\.json$", RegexOptions.Compiled);
-    private static readonly Regex GraphSoundPattern = new(@"GraphSoundResource_(\d+)_(\d+)\.json$", RegexOptions.Compiled);
     private static readonly Regex TxtpWemPattern = new(@"(?:##|wem/)(\d+)\.wem", RegexOptions.Compiled);
     private static readonly Regex TxtpWemIdPattern = new(@"##(\d+)\.wem", RegexOptions.Compiled);
     private static readonly Regex TxtpWemIdAltPattern = new(@"wem/(\d+)\.wem", RegexOptions.Compiled);
@@ -140,27 +138,11 @@ public static partial class AudioPipeline
     }
 
     /// <summary>
-    /// 对应 build_wem_res_wem_index：WemResJson 中的 WemID → WemResWem 里的 .wem 路径。
+    /// WemID → WemResWem 里的 .wem 路径，由 ⓪ 写出的 <c>wem_index.json</c> 推导。
+    /// （旧实现是去读 7,838 个 WemResJson 拿 WemID，现在那些 JSON 已经不存在了。）
     /// </summary>
-    internal static Dictionary<uint, string> BuildWemResWemIndex(PipelinePaths paths)
-    {
-        var index = new Dictionary<uint, string>();
-        if (!Directory.Exists(paths.WemResWemDir)) return index;
-
-        foreach (var file in Directory.EnumerateFiles(paths.WemResWemDir, "*.wem"))
-        {
-            var m = WemFilePattern.Match(Path.GetFileName(file));
-            if (!m.Success) continue;
-            var jsonPath = Path.Combine(paths.WemResJsonDir,
-                $"WwiseWemResource_{m.Groups[1].Value}_{m.Groups[2].Value}.json");
-            if (!File.Exists(jsonPath)) continue;
-            using var doc = LoadJsonDocument(jsonPath);
-            if (doc == null) continue;
-            var rawId = JsonLong(doc.RootElement, "WemID");
-            if (rawId.HasValue) index[ToU32(rawId.Value)] = file;
-        }
-        return index;
-    }
+    internal static Dictionary<uint, string> BuildWemResWemIndex(PipelinePaths paths) =>
+        BuildWemPaths(paths, LoadWemIndex(paths));
 
     /// <summary>对应 export_by_id.py 的 build_wem_map：WemID → WemResWem 路径（带缓存文件）。</summary>
     internal static Dictionary<uint, string> BuildWemMapWithCache(PipelinePaths paths, bool forceRefresh,
@@ -186,36 +168,11 @@ public static partial class AudioPipeline
             catch { }
         }
 
-        var map = new Dictionary<uint, string>();
-        if (!Directory.Exists(paths.WemResJsonDir)) return map;
-
-        var files = Directory.EnumerateFiles(paths.WemResJsonDir, "*.json").ToList();
-        int handled = 0;
-        foreach (var file in files)
+        var map = BuildWemPaths(paths, LoadWemIndex(paths));
+        if (map.Count == 0)
         {
-            ct.ThrowIfCancellationRequested();
-            handled++;
-            var m = WemResJsonPattern.Match(Path.GetFileName(file));
-            if (!m.Success) continue;
-            using var doc = LoadJsonDocument(file);
-            if (doc == null) continue;
-
-            var root = doc.RootElement;
-            var entries = root.ValueKind == JsonValueKind.Array
-                ? root.EnumerateArray().ToList()
-                : new List<JsonElement> { root };
-
-            foreach (var entry in entries)
-            {
-                var rawId = JsonLong(entry, "WemID");
-                if (!rawId.HasValue) continue;
-                var wemFile = Path.Combine(paths.WemResWemDir,
-                    $"WwiseWemResource_{m.Groups[1].Value}_{m.Groups[2].Value}.wem");
-                if (File.Exists(wemFile)) map[ToU32(rawId.Value)] = wemFile;
-            }
-
-            if (handled % 500 == 0)
-                Report(null, $"[wem_map] {handled}/{files.Count}");
+            SafeLog(log, Locale.S("pipe_wemindex_missing", paths.WemIndexJson));
+            return map;
         }
 
         try
@@ -231,33 +188,21 @@ public static partial class AudioPipeline
         return map;
     }
 
-    /// <summary>WemID → 坐标 / JSON 文件名。</summary>
+    /// <summary>WemID → 坐标 / 对象名（对象名沿用旧的 <c>WwiseWemResource_g_i.json</c> 形式，仅作标识）。</summary>
     internal sealed record WemResInfo(string Coord, string JsonFile);
 
     internal static Dictionary<uint, WemResInfo> BuildWemResJsonIndex(PipelinePaths paths, Action<string>? log)
     {
         var index = new Dictionary<uint, WemResInfo>();
-        if (!Directory.Exists(paths.WemResJsonDir))
-        {
-            SafeLog(log, $"[!] 找不到 WemResJson 目录: {paths.WemResJsonDir}");
-            return index;
-        }
+        var raw = LoadWemIndex(paths);
+        if (raw.Count == 0)
+            SafeLog(log, Locale.S("pipe_wemindex_missing", paths.WemIndexJson));
 
-        foreach (var file in Directory.EnumerateFiles(paths.WemResJsonDir, "WwiseWemResource_*.json"))
+        foreach (var (wemId, coord) in raw)
         {
-            try
-            {
-                var parts = Path.GetFileNameWithoutExtension(file).Split('_');
-                if (parts.Length < 3) continue;
-                using var doc = LoadJsonDocument(file);
-                if (doc == null) continue;
-                var rawId = JsonLong(doc.RootElement, "WemID");
-                if (!rawId.HasValue) continue;
-                index[ToU32(rawId.Value)] = new WemResInfo(
-                    $"{parts[1]}:{parts[2]}",
-                    Path.GetFileName(file));
-            }
-            catch { }
+            var parts = coord.Split(':');
+            if (parts.Length != 2) continue;
+            index[wemId] = new WemResInfo(coord, $"WwiseWemResource_{parts[0]}_{parts[1]}.json");
         }
         return index;
     }
@@ -276,31 +221,33 @@ public static partial class AudioPipeline
         return index;
     }
 
-    /// <summary>对应 build_bank_res_wem_ids：BankRes 的 WemIDs 字段并集。</summary>
+    /// <summary>
+    /// 「这个 WEM 是否被某个 bank 引用」的集合。
+    ///
+    /// 旧实现读 BankRes JSON 的 <c>WemIDs</c> 字段；BankRes 已取消，改读 ⓪ 写进
+    /// <c>wem_index.json</c> 的 <c>BankWemIDs</c>（同样是 <c>WwiseBankResource.WemIDs</c> 的并集，
+    /// 语义完全一致）。**不能**用 banks.xml 的媒体表代替 —— 那是「内嵌在 bank 里的媒体」，
+    /// 是另一个集合。
+    /// </summary>
     internal static HashSet<uint> BuildBankResWemIds(PipelinePaths paths, Action<string>? log)
     {
         var ids = new HashSet<uint>();
-        if (!Directory.Exists(paths.BankResDir))
+        if (!File.Exists(paths.WemIndexJson))
         {
-            SafeLog(log, $"[!] 找不到 BankRes 目录: {paths.BankResDir}");
+            SafeLog(log, Locale.S("pipe_wemindex_missing", paths.WemIndexJson));
             return ids;
         }
-
-        foreach (var file in Directory.EnumerateFiles(paths.BankResDir, "WwiseBankResource_*.json")
-                     .OrderBy(f => Path.GetFileName(f), StringComparer.Ordinal))
+        try
         {
-            try
-            {
-                using var doc = LoadJsonDocument(file);
-                if (doc == null) continue;
-                if (!doc.RootElement.TryGetProperty("WemIDs", out var arr) || arr.ValueKind != JsonValueKind.Array) continue;
-                foreach (var el in arr.EnumerateArray())
-                    if (el.TryGetInt64(out var raw)) ids.Add(ToU32(raw));
-            }
-            catch (Exception ex)
-            {
-                SafeLog(log, $"[!] 解析 {Path.GetFileName(file)} 失败: {ex.Message}");
-            }
+            var file = JsonSerializer.Deserialize<WemIndexFile>(File.ReadAllText(paths.WemIndexJson),
+                PipelineJson.Options);
+            if (file?.BankWemIDs != null)
+                foreach (var raw in file.BankWemIDs)
+                    if (uint.TryParse(raw, out var id)) ids.Add(id);
+        }
+        catch (Exception ex)
+        {
+            SafeLog(log, $"[!] 解析 {Path.GetFileName(paths.WemIndexJson)} 失败: {ex.Message}");
         }
         return ids;
     }
@@ -468,101 +415,32 @@ public static partial class AudioPipeline
 
     #endregion
 
-    #region BNK 提取（extract_bnk_from_json.py）
+    #region BNK（由 ⓪ 直读游戏数据写出）
+
+    // 「从 BankRes 的 JSON 解码 Base64 BankData」这一步已取消：⓪ 在读取游戏文件时直接把
+    // WwiseBankResource.BankData 落成 .bnk（见 OdradekExporter.ExportBanks），
+    // 修复逻辑仍是下面的 FixWwiseData，产物与旧步骤逐字节一致。
 
     /// <summary>
-    /// 从 BankRes 的 JSON 中解码 Base64 的 BankData，修复 Wwise Bank 的对齐问题后
-    /// 写入 Extracted_Banks。返回成功提取的数量。
+    /// 直接把游戏里读到的 <c>WwiseBankResource.BankData</c> 变成可写盘的 bank 二进制。
+    /// 走的是与「从 Base64 JSON 提取」**同一段** <see cref="FixWwiseData"/>，
+    /// 所以 ⓪ 直读游戏数据产出的 .bnk 与旧步骤逐字节一致。
     /// </summary>
-    public static int ExtractBanks(PipelinePaths paths, IProgress<PipelineProgress>? progress, Action<string>? log,
-        CancellationToken ct)
+    internal static byte[]? FixWwiseBankData(object? raw)
     {
-        Directory.CreateDirectory(paths.ExtractedBanksDir);
-
-        if (!Directory.Exists(paths.BankResDir))
+        switch (raw)
         {
-            SafeLog(log, $"[!] 找不到 BankRes 目录: {paths.BankResDir}");
-            return 0;
-        }
-
-        var files = Directory.EnumerateFiles(paths.BankResDir, "*.json")
-            .OrderBy(f => Path.GetFileName(f), StringComparer.Ordinal)
-            .ToList();
-
-        Report(progress, Locale.S("pipe_bnk_start", files.Count), 0, files.Count);
-
-        int count = 0, handled = 0;
-        foreach (var file in files)
-        {
-            ct.ThrowIfCancellationRequested();
-            handled++;
-            var name = Path.GetFileName(file);
-            try
+            case byte[] bytes:
+                return FixWwiseData(bytes);
+            case IReadOnlyList<object?> list when list.Count > 0:
             {
-                using var doc = LoadJsonDocument(file);
-                var root = doc?.RootElement;
-                string? raw = null;
-                if (root.HasValue)
-                {
-                    raw = JsonString(root.Value, "BankData");
-                    if (string.IsNullOrEmpty(raw) &&
-                        root.Value.TryGetProperty("Data", out var data) && data.ValueKind == JsonValueKind.Object)
-                    {
-                        raw = JsonString(data, "BankData");
-                    }
-                }
-
-                if (!string.IsNullOrEmpty(raw))
-                {
-                    var binary = SmartDecode(raw, log);
-                    if (binary != null && binary.Length >= 4 &&
-                        binary[0] == (byte)'B' && binary[1] == (byte)'K' &&
-                        binary[2] == (byte)'H' && binary[3] == (byte)'D')
-                    {
-                        var outPath = Path.Combine(paths.ExtractedBanksDir, Path.ChangeExtension(name, ".bnk"));
-                        File.WriteAllBytes(outPath, binary);
-                        count++;
-                    }
-                }
+                var buffer = new byte[list.Count];
+                for (var i = 0; i < list.Count; i++)
+                    buffer[i] = Convert.ToByte(list[i], System.Globalization.CultureInfo.InvariantCulture);
+                return FixWwiseData(buffer);
             }
-            catch (Exception ex)
-            {
-                SafeLog(log, $"[错误] 处理 {name}: {ex.Message}");
-            }
-
-            if (handled % 5 == 0 || handled == files.Count)
-                Report(progress, $"[{handled}/{files.Count}] {name}", handled, files.Count);
-        }
-
-        SafeLog(log, Locale.S("pipe_bnk_done", count));
-        return count;
-    }
-
-    private static byte[]? SmartDecode(string b64Str, Action<string>? log)
-    {
-        var text = b64Str;
-        var missingPadding = text.Length % 4;
-        if (missingPadding != 0) text += new string('=', 4 - missingPadding);
-
-        try
-        {
-            return FixWwiseData(Convert.FromBase64String(text));
-        }
-        catch (Exception ex)
-        {
-            // 容错：剔除空白/换行等非 Base64 字符后重试一次
-            try
-            {
-                var cleaned = new string(text.Where(c => !char.IsWhiteSpace(c)).ToArray());
-                missingPadding = cleaned.Length % 4;
-                if (missingPadding != 0) cleaned += new string('=', 4 - missingPadding);
-                return FixWwiseData(Convert.FromBase64String(cleaned));
-            }
-            catch
-            {
-                SafeLog(log, string.Format(Locale.S("pipe_bnk_b64_fail"), ex.Message));
+            default:
                 return null;
-            }
         }
     }
 

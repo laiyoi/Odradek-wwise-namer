@@ -7,26 +7,29 @@ WPF 桌面工具，用于对 [unused_wem_with_banks.csv](../unused_wem_with_bank
 - **标注音频**：原来的主界面——WEM 列表、来源关联、波形、标注与导出
 - **提取音频**：由原 Python 脚本迁移而来的音频流水线——路径设置 + 各处理步骤 + 内联日志输出
 
-⓪ 号步骤**直接读取游戏文件**导出资源（见下），随后 ①②③④ 把它们加工成音频，最后回到「标注音频」页标注。
+⓪ 号步骤**直接读取游戏文件**（不落任何资源 JSON），随后 ②③④ 把它加工成音频，最后回到「标注音频」页标注。
 
 ## 功能概览
 
 - **CSV 加载**：解析 `unused_wem_with_banks.csv`，自动识别列名，支持含引号的 CSV 字段
 - **实时音频预览**：通过 vgmstream-cli.exe 将 WEM 解码为 WAV → NAudio WASAPI 播放，纯软件流水线，不依赖系统解码器
-- **来源关联**：显示该 WEM 的 WemRes 坐标、**所属 bank**（CSV 的 `FoundInBankRes` / `BankCount` / `Banks` 列）
+- **来源关联**：显示该 WEM 的 WemRes 坐标（来自 `wem_index.json`）、**所属 bank**（CSV 的 `FoundInBankRes` / `BankCount` / `Banks` 列）
   与**所属 txtp 文件名**（CSV 的 `TxtpFiles` 列，多个用 `;` 分隔），以及文件大小
 - **播放该 WEM 所属的 txtp**：选中条目后点「播放所属txtp」或按 `Ctrl+T`，自动反查引用该
   WemID 的 txtp 并作为音频播放，**无需手动拖入**；多个 txtp 引用同一 WEM 时弹出选择框。
   原有的拖入 txtp / 「文件 → 打开txtp预览」方式依然保留
 - **提取音频标签页**（由原 Python 脚本迁移而来，**排在「标注音频」前面**）：
-  ⓪ **从游戏文件直接导出资源**、**导出 WEM 原始音频**、
+  ⓪ **从游戏文件直接读资源**（链路 + `wem_index.json` + `.bnk`）、**导出 WEM 原始音频**、
   路径设置（7 行，见下）、**一键下载 vgmstream + wwiser**、BNK 提取、
   **用 wwiser 生成 TXTP**、音频映射表构建、按映射表导出音频、按 Event ID 导出、
   未使用 WEM 分析、txtp 索引重建；所有步骤都在该页内联运行，带实时日志、进度条和取消按钮
-- **工具位置固定**：vgmstream 与 wwiser 只从 **exe 旁边的 `utils` 目录**里找
-  （`<exe目录>\utils`），不会去别的地方找：
+- **工具位置固定**：所有外部工具都从 **exe 旁边的 `utils` 目录**里找（`<exe目录>\utils`），
+  不会去别的地方找，都由「下载工具」自动装好：
   - `utils\vgmstream-cli.exe`（或 `utils\<解压出来的子目录>\vgmstream-cli.exe`，会递归找）
-  - `utils\wwiser.pyz`
+  - `utils\wwiser.pyz`、`utils\wwnames.db3`（**必须同目录**，见 ② 那节）
+  - `utils\python\python.exe`（python.org 的嵌入式 Python，跑 wwiser 用；**不需要你装 Python**）
+  - `utils\wwiser_cli.py`（随程序分发；见 ② 那节，用来绕开 wwiser 的 tkinter 依赖）
+
   找到后 vgmstream 路径会自动写进配置。
 - **波形可视化**：基于 Canvas 绘制峰值波形，播放时高亮已播放部分，可点击波形跳转（Seek）
 - **多声道下混**：自动将 3~8 声道音频下混为立体声，兼容任意声道数的 WEM 文件
@@ -45,7 +48,7 @@ WPF 桌面工具，用于对 [unused_wem_with_banks.csv](../unused_wem_with_bank
 
 - Windows 10 x64 或更高版本
 - [.NET 10.0 Desktop Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)（或更高版本）
-- **DS2 游戏本体**（仅 ⓪ 导出资源 / 导出 WEM 音频需要；标注与播放不依赖它）
+- **DS2 游戏本体**（仅 ⓪ 读游戏资源 / 导出 WEM 音频需要；标注与播放不依赖它）
 - [vgmstream-cli.exe](https://github.com/vgmstream/vgmstream/releases)（用于 WEM → WAV 解码）——
   程序会**自动下载**，一般不需要手动准备
 
@@ -90,20 +93,23 @@ dotnet publish WemLabeler/WemLabeler.csproj --configuration Release --runtime wi
 首次启动时会自动下载 vgmstream（状态栏显示进度）。你也可以通过菜单 **文件 → 设置 vgmstream 路径** 随时更改。
 
 然后通过 **文件 → 打开 CSV** 加载 [`unused_wem_with_banks.csv`](../unused_wem_with_banks.csv)，
-或点「提取音频」页的 **⓪ 导出资源** 先把数据从游戏里导出。
+或点「提取音频」页的 **⓪ 读游戏资源** 先把数据从游戏里读出来。
 
 ## 完整流程
 
 ```
-⓪ 导出资源（直读游戏文件）      从 DS2 安装目录读 streaming_graph.core，
-                               按类型导出 6 类资源的 JSON + 原始 .wem
+⓪ 读游戏资源（直读游戏文件）    读 streaming_graph.core，一趟写出：
+                               · sound_wem_mapping_export.json 的链路部分
+                               · wem_index.json（WemID ↔ 对象坐标）
+                               · Extracted_Banks/*.bnk（BankData 直接落盘）
         │
         ▼
-① 从 BankRes 提取 BNK           BankRes/*.json 里的 Base64 BankData → Extracted_Banks/*.bnk
 ② 用 wwiser 生成 TXTP           *.bnk → Extracted_Banks/txtp/*.txtp
-③ 构建音频映射表                 GraphSoundRes/GraphPgmRes/NodeConstRes + txtp → sound_wem_mapping_export.json
-④ 按映射表导出音频               上面两者 → Exported_Audio/*.wav
-分析未使用的 WEM                 WemResJson 里没被用到的 → unused_wem_with_banks.csv
+   （导出 WEM 音频，约 10GB）    WwiseWemResource → WemResWem/*.wem
+③ 富化音频映射表                 mapping 链路 + txtp / wem_index / banks.xml
+                               → sound_wem_mapping_export.json（含音频源）
+④ 按映射表导出音频               上面 → Exported_Audio/*.wav
+分析未使用的 WEM                 基于 sound_wem_mapping_export.json → unused_wem_with_banks.csv
         │
         ▼
 标注音频（另一个标签页）          打开 unused_wem_with_banks.csv 逐条听、打标注
@@ -156,9 +162,9 @@ dotnet publish WemLabeler/WemLabeler.csproj --configuration Release --runtime wi
 │   WEM 音频目录:    [____________] [浏览...] [打开]           │
 ├────────────────────────────────────────────────────────────┤
 │  音频流水线                                                 │
-│   [⓪ 导出资源（直读游戏文件）] [导出 WEM 音频（约 10GB）]    │
+│   [⓪ 读游戏资源（直读游戏文件）] [导出 WEM 音频（约 10GB）]  │
 │   [下载工具 (vgmstream + wwiser)] [工具目录]                │
-│   [① 从 BankRes 提取 BNK] [② 用 wwiser 生成 TXTP]          │
+│   [② 用 wwiser 生成 TXTP] [③ 富化音频映射表]               │
 │   [③ 构建音频映射表] [④ 按映射表导出音频]                   │
 │   [分析未使用的 WEM] [重建 txtp 索引]                        │
 │   Event ID: [________] [按 Event ID 导出] [ ] 强制重建缓存   │
@@ -238,48 +244,47 @@ dotnet publish WemLabeler/WemLabeler.csproj --configuration Release --runtime wi
 
 | 按钮 | 等价操作 | 产物 |
 | ---- | -------- | ---- |
-| **⓪ 导出资源（直读游戏文件）** | odradek 的导出（**改为直接读游戏文件**） | `WemResJson/`、`BankRes/`、`GraphSoundRes/`、`GraphPgmRes/`、`NodeConstRes/`、`WwiseID/` |
+| **⓪ 读游戏资源（直读游戏文件）** | odradek 的导出 + `extract_bnk_from_json.py`（**改为一步直读游戏文件**） | `sound_wem_mapping_export.json`（链路部分）、`wem_index.json`、`soundmap_report.txt`、`Extracted_Banks/*.bnk`；**不再落任何资源 JSON** |
 | **导出 WEM 音频（约 10GB）** | —（新增） | 目标目录下的 `*.wem`（原始音频） |
-| 下载工具 (vgmstream + wwiser) | —（新增） | exe 旁边的 `utils\`：vgmstream（最新 release 的 win64 zip，解压）与 `wwiser.pyz`（最新 release 的单文件 zipapp） |
-| ① 从 BankRes 提取 BNK | `extract_bnk_from_json.py` | `Extracted_Banks/*.bnk` |
-| ② 用 wwiser 生成 TXTP | 手工开 wwiser 点「Generate TXTP」 | `Extracted_Banks\txtp\*.txtp` |
-| ③ 构建音频映射表 | `export_sounds.py 1` | `sound_wem_mapping_export.json`、`missing_wem_files.csv`、`mapping_build.log` |
+| 下载工具 (vgmstream + wwiser + Python) | —（新增） | exe 旁边的 `utils\`：vgmstream（最新 release 的 win64 zip，解压）、`wwiser.pyz` + `wwnames.db3`、`python\`（python.org 的嵌入式 Python，约 13 MB）、`wwiser_cli.py`（随程序分发） |
+| ② 用 wwiser 生成 TXTP | 手工开 wwiser 点「Generate TXTP」 | `Extracted_Banks\txtp\*.txtp`（bank 路径必须是相对 `../`） |
+| ③ 富化音频映射表 | `export_sounds.py 1` 的 txtp/WEM 部分 | 覆写 `sound_wem_mapping_export.json`、`missing_wem_files.csv`、`mapping_build.log` |
 | ④ 按映射表导出音频 | `export_sounds.py 2` | 输出目录下的 `*.wav`、`streaming_wem_map.csv`、`export_progress.json` |
 | 按 Event ID 导出 | `export_by_id.py` | `Decoded_Audio_Split/{event}_{wem}.wav`、`wem_map_cache.json` |
-| 分析未使用的 WEM | `link_unused_wem.py` | `unused_wem_with_banks.csv`（列见下） |
+| 分析未使用的 WEM | `link_unused_wem.py`（改为基于 `sound_wem_mapping_export.json` + `wem_index.json`） | `unused_wem_with_banks.csv`（列见下） |
 | 重建 txtp 索引 | —（新增） | 内存索引，「播放所属txtp」在没有 `TxtpFiles` 列时使用 |
 
 每个作业都**在本标签页内联执行**：后台线程运行，日志实时刷到下方文本框，
 进度条显示进度，随时可以点「取消」中断，日志可以一键复制。
 
-### ⓪ 导出资源（直读游戏文件）
+### ⓪ 读游戏资源（一步，不落任何资源 JSON）
 
-**不再需要 odradek.exe，也不再需要 `links-*.db`。** 程序直接读 DS2 安装目录下的
-`LocalCacheWinGame\package\streaming_graph.core`，靠 `group.types()` 拿到每个对象的类型，
-**按类型搜索是纯元数据操作（零反序列化）**，然后再逐组反序列化、写出与 odradek 逐字节相同的 JSON。
+**不再需要 odradek.exe / `links-*.db`，也不再需要原来的六个资源 JSON 目录。**
+程序直接读 DS2 安装目录下的 `LocalCacheWinGame\package\streaming_graph.core`，一趟做完三件事：
+
+1. **跳链**（纯元数据找对象 + 按需读组）：`GraphSoundResource → GraphProgramResource →
+   NodeConstantsResource → WwiseID`，把结果写进 `sound_wem_mapping_export.json` 的**链路部分**
+   （`ResourceName` / `GraphSound` 坐标 / `WwiseID`）。详见下面的 ③；
+2. **写 `wem_index.json`**：`WemID → WwiseWemResource 坐标`（7,150 条）。它顶替了原来 7,838 个
+   `WemResJson/*.json` —— WemID↔`.wem` 文件的对应、来源关联、未使用 WEM 分析都靠它；
+3. **直接导出 `.bnk`**：把 `WwiseBankResource.BankData` 落成
+   `Extracted_Banks/WwiseBankResource_<组>_<下标>.bnk`。
+   所以「① 从 BankRes 提取 BNK」这一步**已经取消**。
 
 实现来自同仓库的 `OdradekSharp/`（对 odradek 源码的逐行移植，`net10.0`），`WemLabeler` 通过
 `ProjectReference` 引用它的 DLL。
 
-- **输出**：`<项目根>\<类型目录>\<类型>_<组>_<下标>.json`
-- **增量**：已存在的文件直接跳过，中断后重跑不会重做
-- **实测**（本机 DS2）：图 `79,323` 组 / `5,354,196` 个 object / `241` 个文件；六类数量与 odradek
-  实际导出的文件数**一一相等**：
-
-  | 类型 | 目录 | 对象数 | 分布组数 |
-  | ---- | ---- | ------ | -------- |
-  | `WwiseWemResource` | `WemResJson` | 7,838 | 366 |
-  | `WwiseBankResource` | `BankRes` | 74 | 22 |
-  | `GraphSoundResource` | `GraphSoundRes` | 5,700 | 519 |
-  | `GraphProgramResource` | `GraphPgmRes` | 25,663 | 2,192 |
-  | `NodeConstantsResource` | `NodeConstRes` | 26,385 | 2,441 |
-  | `WwiseID` | `WwiseID` | 7,000 | 574 |
-
-  全部文件都已存在时，整轮只花 **6 秒**（纯枚举 + 跳过）。
-
+- **中间产物只剩两类**：`Extracted_Banks/`（`.bnk` + `txtp/`）与 `WemResWem/`（`.wem`）
+- **实测**（本机 DS2，4 线程）：图 `79,323` 组 / `5,354,196` 个 object / `241` 个文件；
+  `5,700` 个 GraphSound → `10,611` 条目、`74` 个 bank、`7,150` 条 WEM 索引，链路 **33 s**
+  （整步含 bank 落盘约 40 s），峰值内存约 **3 GB**
 - **游戏根目录**：认「目录下有 `DS2.exe`」。可以手输、点「浏览...」选，或点那行的
   **「自动查找」**——它会先读注册表里的 Steam 路径与 `libraryfolders.vdf`，再扫各盘的
   `steamapps\common\*`，最后兜底浅扫盘根。
+
+产出对比（旧的 6 类 JSON 导出 → 现在）：GraphSound `5,700` / GraphProgram `25,663` /
+NodeConstants `26,385` / WwiseID `7,000` / WwiseWem `7,838` / WwiseBank `74` 这些数量都还在，
+只是不再落盘成 JSON，而是在同一次读取里直接被消费掉。
 
 ### 导出 WEM 音频（约 10GB）
 
@@ -294,6 +299,93 @@ dotnet publish WemLabeler/WemLabeler.csproj --configuration Release --runtime wi
 - 同样是增量的：目录里已存在的 `.wem` 会跳过。
 - 磁盘提示：整份约 10 GB，请确认目标盘有足够空间。
 
+### ③ 构建音频映射表（直读游戏数据跳链）
+
+**链路不读 JSON，这一步也不读游戏。** ⓪ 已经把链路写进了 `sound_wem_mapping_export.json`；
+③ 只做 **txtp 富化**：查 txtp 事件索引、`banks.xml` 的银行媒体表和 `wem_index.json`，
+把 `TXTP_Filename` / `AudioSources`（含每个音频源对应的 WwiseWemResource 坐标）补上，覆写同一个文件。
+
+跳链的核心在 [`Pipeline/SoundChainResolver.cs`](Pipeline/SoundChainResolver.cs)（⓪ 调用），
+单进程、图只加载一次。链路字段（在 `types.json` 上逐一核实过）：
+
+```
+GraphSoundResource.ResourceName          : String                     ← 音效名
+GraphSoundResource.GraphProgram          : Ref_GraphProgramResource
+GraphProgramResource.ExposedDataResource : Ref_NodeConstantsResource
+NodeConstantsResource.Parameters         : ProgramParameterList
+  └ DefaultSoftLinkedObjects             : Array_Ref_RTTIRefObject    ← 可能有多个，也可能一个都不是
+WwiseID.Id                               : uint32
+```
+
+记录形状（旧版还有 `GraphProgram` / `ExposedDataResource` / `WwiseID_Coord` 三个中间坐标，
+现在跳链一次完成，不再需要）：
+
+```json
+{
+  "ResourceName": "sd_env_wildfire_tree_fall_03",
+  "GraphSound": "10009:156",
+  "WwiseID": 1631881922,
+  "TXTP_Filename": "WwiseBankResource_1604_366-0458-event.txtp",
+  "AudioSources": [
+    { "WemID": 719682266, "SourceType": "Embedded",
+      "BankFile": "WwiseBankResource_1604_366.bnk",
+      "WemRes_Coord": "1604:1266", "RawLine": "../WwiseBankResource_1604_366.bnk #s177 #i  ##719682266.wem" }
+  ]
+}
+```
+
+- `GraphSound` 是 **GraphSoundResource 的对象坐标 `组:下标`**（可直接拿去 `odradeksharp read`）。
+- `WemRes_Coord` 由 `wem_index.json` 查得，是 **WwiseWemResource 的对象坐标 `组:下标`**。
+  旧版这个字段写的是 `WemID:<数字>`，根本不是坐标，现已修正；查不到（例如 bank 内嵌媒体不是
+  WwiseWemResource 对象）时为 `null`。
+
+性能上必须这么做的原因（都是实测出来的，不是推测）：
+
+1. **对象在流里没有长度/偏移**，要取组内第 *k* 个对象就必须顺序解出 `0..k`。所以
+   「同一个组按不同下标读两趟」= 两组份工作量，**每个组必须只读一次**。
+2. 做法：先用**纯元数据**（`group.types()`）把每个组里属于这四种类型的下标全部收集起来；
+   第一次读该组时把它们一次读齐并缓存，之后任何下标请求都是缓存命中。
+   实测：4 趟 × ~520 组 = **2,122 次组读取 → 583 次**，链路耗时 137 s → **33 s**。
+3. **按需读组**：`ReadGroupFiltered(groupId, wanted, readSubgroups:false)`，只要链路上的对象，
+   其余只留**类型桩**（不物化载荷），所以不会把组里无关的大数组拖进内存。
+   不做子组递归（locator 照样解析）。
+4. **有界 LRU 组缓存**（按 groupId，按整组对象槽位计费）。刻意**不**照抄「每组处理完就
+   `ReleaseCaches()`」——那是为一次性批量导出设计的，走引用链会把大组反复重解析。
+5. **先判类型再决定读不读**：soft-linked 目标用 `group.Types[i]` O(1) 判类型，不是 `WwiseID` 就不读。
+   5,700 个音效共 17,014 个 soft-link，其中 137 个不是 WwiseID，一个字节都没读。
+6. **并行**：默认 `min(4, CPU)` 个线程，每个线程一个 reader（`OdradekSharp` 已有 ThreadLocal reader）。
+
+实测（本机 DS2，4 线程）：
+
+| 项 | 值 |
+| --- | --- |
+| GraphSoundResource | 5,700（全部读出） |
+| 产出条目 | 10,611（= 每条一个 WwiseID） |
+| 不同 WwiseID | 6,361 |
+| 链路涉及的组 | 2,514；实际读取 **583**，失败 0，淘汰重读 0 |
+| 截断点之后的对象 | 0 |
+| ⓪ 链路耗时 / ③ 富化耗时 | **33 s** / **12 s** |
+| 峰值内存 | **约 3 GB** |
+
+产出报告 `<项目根>\soundmap_report.txt`：总数 / 产出条目数 / 每个「本该有但拿不到」的对象明细
+（哪个阶段、哪个 `组:下标`、什么原因）。
+
+**与 Python 基准逐条比对**（`sound_wem_mapping_export.json`，10,611 条）：
+`(ResourceName, WwiseID)` **10,611/10,611 完全一致**；`TXTP_Filename` 有 220 条不同 ——
+原因是同一个 event ID 会命中多个 `.txtp`，谁胜出取决于目录枚举顺序（Python 与 C# 都如此，
+是既有行为）。除这 220 条外，层内容与基准一致；`WemRes_Coord` 是按上面说的**故意**改成了真坐标。
+`Extracted_Banks/*.bnk` 与旧「从 BankRes 提取」的产物 **74/74 逐字节相同**。
+
+命令行（无界面）也能跑，方便对比和脚本化：
+
+```
+WemLabeler.exe soundmap [resources|mapping|unused|all] --base <项目根> --game <游戏根> \
+    --out sound_wem_mapping_new.json --report soundmap_report.txt --log run.log
+```
+
+`resources` = ⓪，`mapping` = ③，`unused` = 分析未使用的 WEM，`all`（默认）= 全都跑。
+`--out` 用来避免覆盖基准文件 `sound_wem_mapping_export.json`。
+
 ### 分析未使用的 WEM
 
 产出的 `unused_wem_with_banks.csv` 列如下：
@@ -302,68 +394,115 @@ dotnet publish WemLabeler/WemLabeler.csproj --configuration Release --runtime wi
 WemID,Coord,JsonFile,WemFile,WemPath,FoundInBankRes,TxtpFiles
 ```
 
-比旧格式**去掉了无信息量的 `IsStreaming`**（全项目已没有任何写入点会产出该列；
-读取旧的含该列的文件仍然兼容）。
+比旧格式**只去掉了 `IsStreaming`** —— 这一列在本作里 7,838 个 WEM 全是 `true`，没有任何信息量，
+是唯一明确不要的列。其余列一律保留。
+
+`FoundInBankRes` = 「这个 WEM 被某个 bank 引用」（来自 `WwiseBankResource.WemIDs` 的并集，
+由 ⓪ 写进 `wem_index.json` 的 `BankWemIDs`）。**不是** `banks.xml` 的媒体表 ——
+那是「内嵌在 bank 里的媒体」，是另一个集合，实测两者差 4,280 行。
 
 `WemPath` 是 WEM 文件的完整路径，需要 **Streaming WEM 目录** 指对；如果该目录不存在，
 程序会**直接报错**，而不是默默写出一堆空路径。
 
 **旧文件里的其他信息不会被清空**，这是刻意设计：
 
-- 除上面这几列以外的列都会按 WemID **原样保留**——程序自己追加的 `Label` / `Duration` /
-  `Channel`，或者你手加的任意列，重新生成时都不会被清掉；
+- 除上面这几列以外（以及被明确丢掉的 `IsStreaming`）的列都会按 WemID **原样保留** ——
+  程序自己追加的 `Label` / `Duration` / `Channel`，或者你手加的任意列，重新生成时都不会被清掉；
 - 旧文件里**已经不再是「未使用」的行**，会连同它的所有信息**整行追加到文件末尾**，
   日志里会提示这次带了多少行过来。
 
 > 换句话说：新算出来的行在前面（按 WemID 排序），被「救回来」的历史行在末尾。
 > 这样反复重新生成也不会丢掉任何人工填过的内容。
+>
+> `missing_wem_files.csv` 走同一套规则（基础列是 `WemID,Filename,Path`，同样只丢 `IsStreaming`）。
+> 读 CSV 的那一侧也一样：`WriteCsvFile` 按原表头逐列写回，只过滤 `IsStreaming`，
+> 表里没见过的列由 `ExtraColumns` 原样带回。
 
 ### ② 用 wwiser 生成 TXTP
 
-实际执行的就是命令行：
+实际执行的就是命令行（**工作目录 = `Extracted_Banks`，`-go` 必须给相对路径**）：
 
 ```
-python <exe目录>\utils\wwiser.pyz -g -go "<Extracted_Banks>\txtp" "<Extracted_Banks>\*.bnk"
+cd /d "<Extracted_Banks>"
+"<exe目录>\utils\python\python.exe" "<exe目录>\utils\wwiser_cli.py" "<exe目录>\utils\wwiser.pyz" ^
+    -g -go "txtp" "*.bnk"
 ```
 
-`wwiser.pyz` 是 Python zipapp，需要 Python 3 —— 程序直接在 PATH 上找
-`python` / `py` / `python3`，**不需要任何配置**；找不到时会提示装 Python。
+> **`-go` 的写法很关键。** wwiser 给内嵌音频行写 bank 路径时，会把「输出目录的绝对路径层数 + 1」
+> 当成 `../` 的个数。给绝对路径 `-go "E:\...\Extracted_Banks\txtp"`，它写出的是
+> `../../../../WwiseBankResource_x_y.bnk` —— 从 txtp 目录解析出去直接指到盘根，
+> **vgmstream 一律失败**（表现就是导出时满屏 `E0:失败 E1:失败 …`，而 `S0:OK` 的流式条目正常）。
+> 给相对路径 `-go txtp` 才会写出正确的 `../WwiseBankResource_x_y.bnk`。
+
+即便手上已经有那些用绝对 `-go` 生成的旧 txtp，**也不用重新生成**：导出时会先按 txtp 目录
+正常解析，解析不到再按文件名去 `Extracted_Banks` 里找（`.bnk` 都平铺在那里，文件名唯一）。
+实测 40,769 条内嵌音频源全部能解析到文件。
+
+> **为什么走 `utils\wwiser_cli.py` 而不是直接跑 `wwiser.pyz`。**
+> `wwiser.pyz` 是 Python zipapp，本来必须由解释器运行；而它的 `__main__.py` 会**无条件**
+> `import wwiser.wgui`，`wgui` 又需要 `tkinter` —— python.org 的嵌入式 Python **不含 tkinter**，
+> 直接跑会 `ModuleNotFoundError: No module named 'tkinter'`（哪怕只是命令行用法）。
+> zipapp 本质是个 zip，加进 `sys.path` 就能直接 `import wwiser.wcli`，于是完全不需要 GUI 那一支。
+
+**Python 解释器**：优先用 `utils\python\python.exe`（由「下载工具」从 python.org 下
+`python-3.x.y-embed-amd64.zip` 解压，约 13 MB），**其次**才回落到 PATH 上的
+`python` / `py` / `python3`。所以正常流程下**不需要用户自己装 Python**。
+找不到时会弹框，点「是」直接跳到下载。
+
+> **`wwnames.db3` 一定要和 `wwiser.pyz` 同目录。** 它是 wwiser 的 hash→名字库
+> （SQLite，481 条），比如 `782826392 → default`、`964811743 → Lv2`：**有它，txtp 文件名里是
+> `[3984055919=Lv2]`；没它，就退化成 `[3984055919=964811743]`**。
+> 两次运行的输出目录不能混用，否则同一批 txtp 会出现两套名字、文件数变成并集。
+
 wwiser 的进度输出在 stderr，程序会把 stdout 和 stderr 都实时打到日志区。
 
-> 小提示：把 `wwnames.db3` 和 `wwiser.pyz` 放在同一个目录（即 exe 旁边的 `utils\`），
-> wwiser 就能用上人工整理的名称，生成的 txtp 文件名会更可读。
+`WemIndexJson`（`wem_index.json`）的形状：
+
+```json
+{
+  "WemDir": "...\\WemResWem",
+  "Wems": { "1159743766": { "Coord": "31196:218", "LengthSeconds": 10.881 } },
+  "BankWemIDs": ["123456", "..."]
+}
+```
+
+- `Wems`：7,150 条 `WemID → WwiseWemResource 坐标`，其中 1,509 条带 `LengthSeconds`
+  （`mLengthInSeconds`，其余为 0）。注意 **504 个 WemID 在图上出现在不止一个对象上**，
+  所以坐标是「其中一个代表」，和旧版按 WemResJson 文件枚举顺序挑出来的可能不同（实测 142 行）。
+- `BankWemIDs`：5,641 条，= 所有 `WwiseBankResource.WemIDs` 的并集（与旧的 BankRes JSON 完全一致）。
 
 ## 路径与自动探测
 
 ### 项目根目录怎么来的
 
-`项目根目录` 会**自动探测**，判定标准是「该目录下存在 `GraphSoundRes` / `BankRes` /
-`WemResJson` / `Extracted_Banks` 之一」，顺序是：
+`项目根目录` 会**自动探测**，判定标准是「该目录下存在 `Extracted_Banks` / `WemResWem` /
+`sound_wem_mapping_export.json` / `wem_index.json` / `unused_wem_with_banks.csv` 之一
+（旧布局的 `GraphSoundRes` / `BankRes` / `WemResJson` 仍然认，老配置不会失效）」，顺序是：
 
 1. `config.json` 里存过的 `BaseDir`（或你手动「浏览...」选过的）；
 2. 当前加载的 CSV 所在目录，逐级向上（最多 8 层）；
 3. exe 所在目录，逐级向上（最多 8 层）。
 
-其余所有目录（GraphSoundRes、BankRes、`Extracted_Banks\txtp`、导出目录等）都由项目根目录派生。
+其余所有目录（`Extracted_Banks` 及它的 `txtp\`、`WemResWem`、各导出目录）都由项目根目录派生。
 
 > **打包给别人的话要注意**：exe 放在项目树里时第 3 条自然就能命中；把 exe 单独拷到别处
 > （比如下载目录）运行时，往上 8 层都不会有那些标志目录，**自动探测必然失败**。
-> 这种情况下程序**不会**拿 exe 目录充数（否则会出现 `C:\下载\WemLabeler\GraphSoundRes`
+> 这种情况下程序**不会**拿 exe 目录充数（否则会出现 `C:\下载\WemLabeler\Extracted_Banks`
 > 这种不存在的路径），而是把该项显示成 `(未设置)` 并弹出一条黄色提示条：
-> 点任意流水线按钮、或点「浏览...」，选一次你用 ⓪ 导出资源的那一层文件夹即可，
+> 点任意流水线按钮、或点「浏览...」，选一次项目根目录即可，
 > 选择结果会写进 `config.json`，以后不用再选。
 > 「标注音频」标签页只依赖 CSV，不受此项影响，可以直接用。
 
 ### 游戏根目录怎么来的
 
-只有 ⓪ 导出资源和「导出 WEM 音频」需要它，判据是**该目录下有 `DS2.exe`**。
+只有 ⓪ 读游戏资源和「导出 WEM 音频」需要它，判据是**该目录下有 `DS2.exe`**。
 可以手输、浏览，或点「自动查找」自动扫（见上）。
 
 ### 路径设置（7 行）
 
 | 行 | 说明 |
 | -- | ---- |
-| 项目根目录 | 含 `GraphSoundRes` / `WemResJson` / `BankRes` 等，通常自动探测 |
+| 项目根目录 | 含 `Extracted_Banks` / `WemResWem` 等，通常自动探测 |
 | 音频导出目录 | ④ 的输出目录 |
 | Streaming WEM 目录 | `.wem` 文件所在处 |
 | txtp 目录 | 默认 `Extracted_Banks\txtp` |
@@ -391,7 +530,7 @@ vgmstream 那行的第三列是「重新探测」（清空手工设置、重新�
 | WemSize | 文件大小（字节），用于「来源关联」的 `大小:` |
 | WemFile | WEM 文件名 |
 | WemPath | WEM 文件完整路径 |
-| FoundInBankRes | 是否被 BankRes 引用（`是`/`否`） |
+| FoundInBankRes | 是否出现在某个 bank 的媒体表里（`是`/`否`，读 `banks.xml`） |
 | BankCount | 关联的 bank 数量 |
 | Banks | bank 文件列表 |
 | TxtpFiles | 引用该 WEM 的 txtp 文件名，多个用 `;` 分隔 |
@@ -431,11 +570,11 @@ vgmstream 那行的第三列是「重新探测」（清空手工设置、重新�
 
 ## 已知限制
 
-- **3 个回调尚未移植**：含 `PhysicsShapeResource` / `PhysicsRagdollResource`（Jolt 二进制）
-  与 `FacialRigSettingWithLODResource`（RigLogic）的组，odradek 侧有专门的读取回调，
-  本实现没有。读到这些组时整组会失败。
-  现在有兜底：**降级为「不读子组」再试一次**，组里的目标对象仍然能导出，
+- **3 个回调（`PhysicsShapeResource` / `PhysicsRagdollResource`（Jolt）、
+  `FacialRigSettingWithLODResource`（RigLogic））都已移植**，真实数据上不再有截断。
+  万一某个组撞上未实现的回调，兜底是**降级为「不读子组」再试一次**，组里的目标对象仍然能导出，
   代价是这些子组里的指针会退化成未解析的 `<ref>`。日志里会以 `[~]` 标记发生了降级。
+  「构建映射表」直读游戏数据那一趟则会把这类对象逐条写进 `soundmap_report.txt`。
 - **派生类型默认不导出**：`WwiseWemLocalizedResource`（`WwiseWemResource` 的派生类，
   实测 268 个对象）默认**不包含**在导出里
   （`WemLabeler/Pipeline/OdradekExporter.cs` 里 `IncludeDerivedTypes = false`）。原因有两个：
@@ -512,7 +651,7 @@ vgmstream 的解码日志保存在程序目录的 `logs/vgmstream_YYYYMMDD.log` 
 
 ## 数据结构依赖
 
-`⓪ 导出资源` 依赖 `OdradekSharp/Data/` 下的两个文件：
+`⓪ 读游戏资源` 依赖 `OdradekSharp/Data/` 下的两个文件：
 
 - `types.json`（8.24 MB）——RTTI 类型模式，20,106 个类型的字段名 / 偏移 / 顺序 / 是否序列化
 - `extensions.json`（9.2 KB）——扩展类型与扩展基类
@@ -539,16 +678,18 @@ csproj 会把它们拷到 exe 旁边的 `Data\` 下，运行期**必需**（没�
 
 | 项 | 规模 |
 | -- | ---- |
-| `GraphPgmRes` | 25,663 个 JSON / 约 128 MB |
-| `NodeConstRes` | 26,385 个 JSON / 约 54 MB |
-| `WemResJson` | 7,838 个 JSON / 约 2.3 MB |
-| `WwiseID` | 7,000 个 JSON / 约 0.5 MB |
-| `GraphSoundRes` | 5,700 个 JSON / 约 8 MB |
-| `BankRes` | 74 个 JSON / 约 1.3 GB（单个最大 58 MB） |
-| `Extracted_Banks\*.bnk` | 74 个 / 约 967 MB |
+| `Extracted_Banks\*.bnk` | 74 个 / 约 967 MB（⓪ 直接写，单个最大 58 MB） |
 | `Extracted_Banks\txtp` | 约 11,715 个 `.txtp` |
+| `WemResWem\*.wem` | 7,838 个 / 约 10 GB（导出 WEM 音频的产物） |
+| `wem_index.json` | 7,150 条 WemID → 坐标 / 约 220 KB |
+| `sound_wem_mapping_export.json` | 10,611 条 / 约 15 MB |
 | `unused_wem_with_banks.csv` | 5,951 行 |
-| WEM 原始音频 | 7,838 个 / 约 10 GB |
+| ⓪ 读游戏资源 | 5,700 个 GraphSound → 10,611 条目、74 个 bank、7,150 条 WEM 索引；链路 33 s / 约 40 s |
+| ③ 富化映射表 | 11,715 个 txtp + 515 MB `banks.xml`；约 12 s |
+
+> 旧布局那六个资源 JSON 目录（`WemResJson` 7,838 / `BankRes` 74 / `GraphSoundRes` 5,700 /
+> `GraphPgmRes` 25,663 / `NodeConstRes` 26,385 / `WwiseID` 7,000）**已经不再产出**。
+> 其中 `GraphSoundRes` 若你以前导出过，可以留着当核对用的基准；其余都可删。
 
 ## 许可
 

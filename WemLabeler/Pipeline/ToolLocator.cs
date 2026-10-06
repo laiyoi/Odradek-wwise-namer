@@ -14,12 +14,17 @@ public sealed class ToolDownloadProgress
 }
 
 /// <summary>
-/// 外部工具（vgmstream / wwiser）的定位与下载。
+/// 外部工具（vgmstream / wwiser / 嵌入式 Python）的定位与下载。
 ///
-/// 位置固定为 **exe 旁边的 utils 目录**（<c>&lt;exe目录&gt;\utils</c>），
-/// 不再回退到项目根目录的 utils，也不会去找别的地方：
-///   utils\vgmstream-cli.exe（或 utils\vgmstream*\vgmstream-cli.exe）
-///   utils\wwiser.pyz
+/// 位置固定为 **exe 旁边的 utils 目录**（<c>&lt;exe目录&gt;\utils</c>），不散落到别处：
+///   <c>utils\vgmstream-cli.exe</c>（或 <c>utils\vgmstream*\vgmstream-cli.exe</c>）
+///   <c>utils\wwiser.pyz</c>
+///   <c>utils\wwnames.db3</c>      —— wwiser 的 hash→名字库，必须和 pyz 同目录
+///   <c>utils\python\python.exe</c> —— 嵌入式 Python
+///   <c>utils\wwiser_cli.py</c>     —— 随程序分发的启动脚本（绕开 wwiser 的 tkinter 依赖）
+///
+/// 注：**pyscript/ 那套老 Python 脚本**是按 <c>BASE_DIR</c> 写死的，它们的 wwiser 放在项目根，
+/// 和这里无关（见 pyscript/README.md）。
 /// </summary>
 public static class ToolLocator
 {
@@ -27,8 +32,14 @@ public static class ToolLocator
     private const string VgmstreamRepoFallback = "vgmstream/vgmstream";
     private const string WwiserRepo = "bnnm/wwiser";
 
-    /// <summary>exe 旁边的 utils（下载目标，也是唯一的查找位置）。</summary>
+    /// <summary>exe 旁边的 utils：所有外部工具都放这里（下载目标，也是查找位置）。</summary>
     public static string UtilsDir => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "utils");
+
+    /// <summary>utils 下的 python 目录（嵌入式解释器解压到这里）。</summary>
+    public static string PythonDir => Path.Combine(UtilsDir, "python");
+
+    /// <summary>我们要跑的 wwiser 启动脚本（随程序分发）。</summary>
+    public static string WwiserCliScript => Path.Combine(UtilsDir, "wwiser_cli.py");
 
     #region 定位
 
@@ -75,11 +86,24 @@ public static class ToolLocator
     }
 
     /// <summary>
-    /// 找 Python 解释器：wwiser.pyz 是 Python zipapp，必须靠解释器运行。
-    /// 不需要用户配置，直接在 PATH 上找 python / py / python3。
+    /// 找 wwiser 的名字库。wwiser 的 <c>-nd</c> 默认自动找（和 pyz 同目录即可），
+    /// 这个只用来在「下载工具」里判断要不要补下。
+    /// </summary>
+    public static string? FindWwnamesDb()
+    {
+        var db = Path.Combine(UtilsDir, "wwnames.db3");
+        return File.Exists(db) ? db : null;
+    }
+
+    /// <summary>
+    /// 找 Python 解释器。**utils 下的嵌入式 Python 优先**，最后才回落到 PATH 上的系统 Python。
+    /// （wwiser.pyz 是 zipapp，必须靠解释器运行。）
     /// </summary>
     public static string? FindPython()
     {
+        var embedded = Path.Combine(PythonDir, "python.exe");
+        if (File.Exists(embedded)) return embedded;
+
         var pathVar = Environment.GetEnvironmentVariable("PATH") ?? "";
         var exts = new[] { "", ".exe", ".bat", ".cmd" };
         foreach (var exe in new[] { "python", "py", "python3" })
@@ -183,7 +207,7 @@ public static class ToolLocator
 
         var targetDir = Path.Combine(UtilsDir, Path.GetFileNameWithoutExtension(found.Name));
         var zipPath = Path.Combine(UtilsDir, found.Name);
-        await DownloadFileAsync(client, found.Url, zipPath, found.Name, log, progress, ct);
+        await DownloadFileAsync(client, found.Url, zipPath, found.Name, UtilsDir, log, progress, ct);
 
         AudioPipeline.SafeLog(log, $"解压到 {targetDir} ...");
         ExtractZipTo(zipPath, targetDir);
@@ -192,27 +216,126 @@ public static class ToolLocator
     }
 
     /// <summary>
-    /// 下载 wwiser 的 <c>wwiser.pyz</c>（Python zipapp，单文件）到 exe\utils 下。
-    /// 不再下源码 zip —— pyz 可以直接命令行运行。
+    /// 下载 wwiser 的 <c>wwiser.pyz</c> 和它的名字库 <c>wwnames.db3</c> 到 <c>exe\utils</c> 下。
+    /// 两个都下、且必须同目录：少了 db，txtp 名字里的 gamesync 只会写成裸 hash
+    /// （`[3984055919=964811743]` 而不是 `[3984055919=Lv2]`），和别的次生成的文件对不上。
     /// </summary>
     public static async Task<string> DownloadWwiserAsync(Action<string>? log,
         IProgress<ToolDownloadProgress>? progress, CancellationToken ct)
     {
         using var client = CreateClient();
+        Directory.CreateDirectory(UtilsDir);
         AudioPipeline.SafeLog(log, $"查询 {WwiserRepo} 的最新 release ...");
 
         var found = await FindReleaseAssetAsync(client, WwiserRepo,
             name => name.Equals("wwiser.pyz", StringComparison.OrdinalIgnoreCase), log, ct);
 
         var target = Path.Combine(UtilsDir, "wwiser.pyz");
-        await DownloadFileAsync(client, found.Url, target, "wwiser.pyz", log, progress, ct);
+        await DownloadFileAsync(client, found.Url, target, "wwiser.pyz", UtilsDir, log, progress, ct);
+
+        // 名字库是可选的（没有也能跑），但缺了它 txtp 只会用数字 hash 命名
+        try
+        {
+            var db = await FindReleaseAssetAsync(client, WwiserRepo,
+                name => name.Equals("wwnames.db3", StringComparison.OrdinalIgnoreCase), log, ct);
+            await DownloadFileAsync(client, db.Url, Path.Combine(UtilsDir, "wwnames.db3"),
+                "wwnames.db3", UtilsDir, log, progress, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            AudioPipeline.SafeLog(log, $"[!] wwnames.db3 没下到（{ex.Message}）；wwiser 会退回用数字 hash 命名");
+        }
+
         return target;
     }
 
-    private static async Task DownloadFileAsync(HttpClient client, string url, string targetPath, string fileName,
-        Action<string>? log, IProgress<ToolDownloadProgress>? progress, CancellationToken ct)
+    /// <summary>
+    /// 下载并解压 python.org 的 **embeddable** Python 到 <c>utils\python</c>，
+    /// 返回 <c>python.exe</c> 的路径。以后跑 wwiser 就固定用这个解释器，不再依赖系统 Python。
+    ///
+    /// 注意 embeddable 包**不含 tkinter**，而 <c>wwiser.pyz</c> 的 <c>__main__.py</c> 会
+    /// 无条件 <c>import wwiser.wgui</c>（wgui 需要 tkinter）。所以我们不走 <c>__main__.py</c>，
+    /// 改用自带的 <c>utils\wwiser_cli.py</c> 直接把 pyz 加进 sys.path 再调 <c>wwiser.wcli</c>。
+    /// </summary>
+    public static async Task<string> DownloadPythonEmbeddedAsync(Action<string>? log,
+        IProgress<ToolDownloadProgress>? progress, CancellationToken ct)
     {
+        using var client = CreateClient();
+        var url = await FindPythonEmbedUrlAsync(client, log, ct);
+        var version = Path.GetFileName(url).Replace("python-", "").Replace("-embed-amd64.zip", "");
+
         Directory.CreateDirectory(UtilsDir);
+        var targetDir = PythonDir;
+        var zipPath = Path.Combine(UtilsDir, $"python-embed-amd64-{version}.zip");
+
+        await DownloadFileAsync(client, url, zipPath, $"python-{version}-embed-amd64.zip", UtilsDir, log,
+            progress, ct);
+
+        AudioPipeline.SafeLog(log, $"解压到 {targetDir} ...");
+        if (Directory.Exists(targetDir)) { try { Directory.Delete(targetDir, true); } catch { } }
+        ExtractZipTo(zipPath, targetDir);
+        try { File.Delete(zipPath); } catch { }
+
+        var exe = Path.Combine(targetDir, "python.exe");
+        if (!File.Exists(exe)) throw new InvalidOperationException($"解压后没找到 python.exe: {exe}");
+        return exe;
+    }
+
+    /// <summary>
+    /// 在 python.org 的版本目录里从最新往下找**第一个真的提供了 embed-amd64.zip 的稳定版本**；
+    /// 找不到就回落到写死的版本。用 HEAD 探测，避免把 12 MB 下下来才发现 404。
+    /// </summary>
+    private static async Task<string> FindPythonEmbedUrlAsync(HttpClient client, Action<string>? log,
+        CancellationToken ct)
+    {
+        const string listUrl = "https://www.python.org/ftp/python/";
+        const string fallbackVersion = "3.14.8";
+
+        try
+        {
+            AudioPipeline.SafeLog(log, $"查询 python.org 的最新版本 ...");
+            var html = await GetStringOrThrowAsync(client, listUrl, ct);
+            var versions = System.Text.RegularExpressions.Regex
+                .Matches(html, @"href=""(3\.(\d+)\.(\d+))/""")
+                .Select(m => (Text: m.Groups[1].Value, Minor: int.Parse(m.Groups[2].Value),
+                    Patch: int.Parse(m.Groups[3].Value)))
+                .Distinct()
+                .OrderByDescending(v => v.Minor).ThenByDescending(v => v.Patch)
+                .Take(12)
+                .ToList();
+
+            foreach (var v in versions)
+            {
+                ct.ThrowIfCancellationRequested();
+                var candidate = $"{listUrl}{v.Text}/python-{v.Text}-embed-amd64.zip";
+                try
+                {
+                    using var head = new HttpRequestMessage(HttpMethod.Head, candidate);
+                    using var resp = await client.SendAsync(head, ct);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        AudioPipeline.SafeLog(log, $"    选中最新的嵌入式 Python: {v.Text}");
+                        return candidate;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // 探测失败就试下一个
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            AudioPipeline.SafeLog(log, $"    查询失败（{ex.Message}），回落到 {fallbackVersion}");
+        }
+
+        return $"{listUrl}{fallbackVersion}/python-{fallbackVersion}-embed-amd64.zip";
+    }
+
+    private static async Task DownloadFileAsync(HttpClient client, string url, string targetPath, string fileName,
+        string labelDir, Action<string>? log, IProgress<ToolDownloadProgress>? progress, CancellationToken ct)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
 
         AudioPipeline.SafeLog(log, $"下载 {url}");
         HttpResponseMessage response;
@@ -225,7 +348,7 @@ public static class ToolLocator
         {
             throw new InvalidOperationException(
                 $"下载失败 {url}\n（{ex.GetType().Name}: {ex.Message}）\n" +
-                $"可以手动下载后放到 {UtilsDir} 下。", ex);
+                $"可以手动下载后放到 {labelDir} 下。", ex);
         }
 
         using (response)

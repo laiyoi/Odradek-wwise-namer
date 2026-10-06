@@ -119,8 +119,6 @@
                                         Margin="0,0,8,8" Click="BtnDownloadTools_Click"/>
                                 <Button x:Name="BtnOpenUtilsDir" MinWidth="110" Height="34"
                                         Margin="0,0,8,8" Click="BtnOpenUtilsDir_Click"/>
-                                <Button x:Name="BtnExtractBanks" MinWidth="190" Height="34"
-                                        Margin="0,0,8,8" Click="BtnExtractBanks_Click"/>
                                 <Button x:Name="BtnGenerateTxtp" MinWidth="190" Height="34"
                                         Margin="0,0,8,8" Click="BtnGenerateTxtp_Click"/>
                                 <Button x:Name="BtnBuildMapping" MinWidth="180" Height="34"
