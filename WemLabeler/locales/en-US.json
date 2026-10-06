@@ -110,6 +110,8 @@
   "status_saved": "Saved: {0}",
   "status_ready": "Ready",
   "status_decoding": "Decoding: {0}...",
+  "menu_copy": "Copy",
+  "decoding_banner": "Decoding audio… {0}\nLong clips or multi-part txtp can take a few seconds; the UI stays responsive",
   "status_playing": "Playing...",
   "status_play_error": "Playback error: {0}",
   "status_decode_fail": "Decode failed (see log)",

@@ -110,6 +110,8 @@
   "status_saved": "已保存: {0}",
   "status_ready": "就绪",
   "status_decoding": "解码中: {0}...",
+  "menu_copy": "复制",
+  "decoding_banner": "正在解码音频… {0}\n长音频或包含多段的 txtp 需要几秒，界面不会卡，可以继续操作",
   "status_playing": "播放中...",
   "status_play_error": "播放出错: {0}",
   "status_decode_fail": "解码失败 (详情见日志)",
