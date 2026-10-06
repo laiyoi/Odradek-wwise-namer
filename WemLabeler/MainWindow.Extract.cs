@@ -434,11 +434,11 @@ public partial class MainWindow
                 Width = GridLength.Auto
             });
 
-            var name = new System.Windows.Controls.TextBlock
+            // 文件名用可选中复制的那种文本（方便把 txtp 名字拷出去）
+            var name = new SelectableText
             {
                 Text = reference.Name,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Top,
                 Margin = new Thickness(0, 0, 6, 0),
                 ToolTip = reference.FullPath ?? reference.Name
             };

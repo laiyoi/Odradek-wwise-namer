@@ -1,6 +1,7 @@
 <Window x:Class="WemLabeler.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:WemLabeler"
         Title="WEM Labeler" Height="760" Width="1200"
         MinHeight="540" MinWidth="880"
         WindowStartupLocation="CenterScreen"
@@ -296,15 +297,14 @@
                     <ScrollViewer Grid.Row="1" Grid.Column="2" VerticalScrollBarVisibility="Auto" Padding="10">
                         <StackPanel>
 
-                            <!-- File Info -->
+                            <!-- File Info（文字可选中复制） -->
                             <GroupBox x:Name="FileInfoGroup" Margin="0,0,0,10">
                                 <StackPanel Margin="8">
-                                    <TextBlock x:Name="InfoFilename" FontWeight="Bold"
-                                               TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock x:Name="InfoWemID" Margin="0,2,0,0"/>
-                                    <TextBlock x:Name="InfoChannel" Margin="0,2,0,0"/>
-                                    <TextBlock x:Name="InfoPath" TextTrimming="CharacterEllipsis"
-                                               Foreground="Gray" FontSize="11" Margin="0,2,0,0"/>
+                                    <local:SelectableText x:Name="InfoFilename" FontWeight="Bold"/>
+                                    <local:SelectableText x:Name="InfoWemID" Margin="0,2,0,0"/>
+                                    <local:SelectableText x:Name="InfoChannel" Margin="0,2,0,0"/>
+                                    <local:SelectableText x:Name="InfoPath"
+                                                          Foreground="Gray" FontSize="11" Margin="0,2,0,0"/>
                                     <!-- 把「本条 WEM 音频」的播放按钮放在上面：
                                          它只负责把这一条 WEM 装进下面的播放器，
                                          和 txtp 各自的「播放」是两回事 -->
@@ -313,22 +313,22 @@
                                 </StackPanel>
                             </GroupBox>
 
-                            <!-- Source Info -->
+                            <!-- Source Info（文字可选中复制） -->
                             <GroupBox x:Name="SourceInfoGroup" Margin="0,0,0,10">
                                 <StackPanel Margin="8">
-                                    <TextBlock x:Name="InfoWemRes" Margin="0,0,0,4"/>
-                                    <TextBlock x:Name="InfoBanks" Margin="0,0,0,4" TextWrapping="Wrap"/>
-                                    <TextBlock x:Name="InfoTxtp" Margin="0,0,0,4" TextWrapping="Wrap"/>
+                                    <local:SelectableText x:Name="InfoWemRes" Margin="0,0,0,4"/>
+                                    <local:SelectableText x:Name="InfoBanks" Margin="0,0,0,4"/>
+                                    <local:SelectableText x:Name="InfoTxtp" Margin="0,0,0,4"/>
                                     <!-- 每个关联的 txtp 一行：文件名 + 「打开」/「播放」两个按钮 -->
                                     <StackPanel x:Name="TxtpListPanel" Margin="0,0,0,4"/>
-                                    <TextBlock x:Name="InfoWwiseID"/>
+                                    <local:SelectableText x:Name="InfoWwiseID"/>
                                 </StackPanel>
                             </GroupBox>
 
                             <!-- Playback：播放器。播放/继续的永远是「已经装进播放器的那段音频」
                                  （本条 WEM 或某个 txtp），不会自己换源 -->
-                            <TextBlock x:Name="PlayingSourceText" Margin="0,0,0,4"
-                                       TextTrimming="CharacterEllipsis" Foreground="#555"/>
+                            <local:SelectableText x:Name="PlayingSourceText" Margin="0,0,0,4"
+                                                  Foreground="#555"/>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                                 <Button x:Name="PlayButton" Width="70" Height="28"
                                         IsEnabled="False" Click="PlayButton_Click"/>
@@ -337,6 +337,17 @@
                                 <CheckBox x:Name="AutoPlayCheck"
                                           Margin="16,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
+
+                            <!-- 解码提示：不挡操作、不弹窗，只是别让人以为界面卡死了 -->
+                            <Border x:Name="DecodingBanner" Visibility="Collapsed" Margin="0,0,0,10"
+                                    Background="#E8F0FE" BorderBrush="#B6CDF5" BorderThickness="1"
+                                    Padding="8,6">
+                                <StackPanel>
+                                    <TextBlock x:Name="DecodingText" TextWrapping="Wrap" Foreground="#204070"/>
+                                    <ProgressBar x:Name="DecodingProgress" Height="5" Margin="0,6,0,0"
+                                                 IsIndeterminate="True"/>
+                                </StackPanel>
+                            </Border>
 
                             <!-- Waveform -->
                             <Border Margin="0,0,0,10" Height="85"
@@ -371,7 +382,7 @@
 
                             <!-- Progress -->
                             <StackPanel Margin="0,14,0,0">
-                                <TextBlock x:Name="ProgressLabel"/>
+                                <local:SelectableText x:Name="ProgressLabel"/>
                                 <ProgressBar x:Name="ProgressBar" Height="20" Margin="0,4,0,0"
                                              Minimum="0" Maximum="1" Value="0"/>
                             </StackPanel>
@@ -384,7 +395,8 @@
         <!-- Status Bar -->
         <StatusBar Grid.Row="2">
             <StatusBarItem>
-                <TextBlock x:Name="StatusText"/>
+                <!-- 状态栏文字保持单行，别把状态栏撑高 -->
+                <local:SelectableText x:Name="StatusText" TextWrapping="NoWrap"/>
             </StatusBarItem>
             <StatusBarItem HorizontalAlignment="Right">
                 <ProgressBar x:Name="StatusProgress" Width="120" Height="14"

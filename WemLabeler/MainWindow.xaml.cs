@@ -810,6 +810,7 @@ public partial class MainWindow : Window
             StatusProgress.Visibility = Visibility.Visible;
             PlayButton.IsEnabled = false;
             StopButton.IsEnabled = true;
+            ShowDecoding(TxtpSourceName());
             VgmLog("========== txtp decode start ==========");
             VgmLog($"input: {_resolvedTxtpPath}");
             var txtpPath = _resolvedTxtpPath;
@@ -1509,6 +1510,7 @@ public partial class MainWindow : Window
 
             StatusProgress.Visibility = Visibility.Visible;
             SetStatus(Locale.S("status_decoding", entry.Filename));
+            ShowDecoding(entry.Filename);
             PlayButton.IsEnabled = false;
             StopButton.IsEnabled = true;
             VgmLog("========== decode start ==========");
@@ -1648,6 +1650,7 @@ public partial class MainWindow : Window
             PlayFromMemory(0);
             StartPlaybackTimer();
             StatusProgress.Visibility = Visibility.Collapsed;
+            HideDecoding();
             // 播放开始后必须把「播放」按钮放回可用状态：
             // 解码期间它有可能是灰的，而 txtp 预览播放时也会被禁用，
             // 结果就是「播放了 txtp 之后点左边的播放没反应」。
@@ -1957,6 +1960,7 @@ public partial class MainWindow : Window
     private void CleanupPlayback(bool restoreUi)
     {
         _audioDecoding = false;
+        HideDecoding();
         if (restoreUi)
         {
             PlayButton.IsEnabled = _currentIndex >= 0;
@@ -2657,6 +2661,22 @@ public partial class MainWindow : Window
     #region Helpers
 
     private void SetStatus(string message) => StatusText.Text = message;
+
+    /// <summary>
+    /// 显示「正在解码音频」提示。不弹窗、不禁用界面，只是别让人以为程序卡住了。
+    /// </summary>
+    private void ShowDecoding(string what)
+    {
+        if (DecodingBanner == null) return;
+        DecodingText.Text = Locale.S("decoding_banner", what);
+        DecodingBanner.Visibility = Visibility.Visible;
+    }
+
+    private void HideDecoding()
+    {
+        if (DecodingBanner == null) return;
+        DecodingBanner.Visibility = Visibility.Collapsed;
+    }
 
     private void SetBusy(bool busy)
     {
