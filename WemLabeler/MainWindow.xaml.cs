@@ -45,6 +45,18 @@ public partial class MainWindow : Window
     private int _txtpDecodeGen;
     private byte[]? _previewWavBytes;
 
+    /// <summary>
+    /// 当前内存里这段 PCM 是不是「所属 txtp」的预览解码结果。
+    /// 用来区分播放器里装的是本条 WEM 还是某个 txtp。
+    /// </summary>
+    private bool _pcmIsTxtpPreview;
+
+    /// <summary>播放器里当前这段音频的来源名字（用于界面显示）。</summary>
+    private string? _pcmSourceName;
+
+    /// <summary>是否有一次解码正在进行（txtp / WEM 都算），供空格键判断「该停还是该播」。</summary>
+    private bool _audioDecoding;
+
     // --- 由 Python 脚本迁移而来的流水线状态 ---
     private PipelinePaths? _paths;
     private TxtpRepository? _txtpRepo;
@@ -58,10 +70,13 @@ public partial class MainWindow : Window
     private MenuItem _exportCsvItem = null!;
     private MenuItem _exportWavItem = null!;
     private MenuItem _exportTxtpItem = null!;
+    private MenuItem _importLabelsItem = null!;
     private MenuItem _vgmstreamItem = null!;
     private MenuItem _exitItem = null!;
     private MenuItem _helpMenuItem = null!;
     private MenuItem _aboutItem = null!;
+    private MenuItem _openLogDirItem = null!;
+    private MenuItem _envDiagItem = null!;
     private MenuItem _langMenuItem = null!;
     private MenuItem _langZhItem = null!;
     private MenuItem _langEnItem = null!;
@@ -102,6 +117,8 @@ public partial class MainWindow : Window
         _exportWavItem.Click += (_, _) => ExportWav();
         _exportTxtpItem = new MenuItem();
         _exportTxtpItem.Click += (_, _) => ExportResolvedTxtp();
+        _importLabelsItem = new MenuItem();
+        _importLabelsItem.Click += (_, _) => ImportLabelsFromFolder();
         _vgmstreamItem = new MenuItem { InputGestureText = "Ctrl+Shift+S" };
         _vgmstreamItem.Click += (_, _) => SetVgmstream_Click();
         _exitItem = new MenuItem();
@@ -115,6 +132,8 @@ public partial class MainWindow : Window
         _fileMenuItem.Items.Add(_exportCsvItem);
         _fileMenuItem.Items.Add(_exportWavItem);
         _fileMenuItem.Items.Add(_exportTxtpItem);
+        _fileMenuItem.Items.Add(new Separator());
+        _fileMenuItem.Items.Add(_importLabelsItem);
         _fileMenuItem.Items.Add(new Separator());
         _fileMenuItem.Items.Add(_vgmstreamItem);
         _fileMenuItem.Items.Add(new Separator());
@@ -131,8 +150,15 @@ public partial class MainWindow : Window
         _helpMenuItem = new MenuItem();
         _aboutItem = new MenuItem();
         _aboutItem.Click += (_, _) => About_Click();
+        _openLogDirItem = new MenuItem();
+        _openLogDirItem.Click += (_, _) => OpenLogDir();
+        _envDiagItem = new MenuItem();
+        _envDiagItem.Click += (_, _) => RunEnvironmentDiagnostics();
 
         _helpMenuItem.Items.Add(_langMenuItem);
+        _helpMenuItem.Items.Add(new Separator());
+        _helpMenuItem.Items.Add(_openLogDirItem);
+        _helpMenuItem.Items.Add(_envDiagItem);
         _helpMenuItem.Items.Add(new Separator());
         _helpMenuItem.Items.Add(_aboutItem);
 
@@ -189,6 +215,7 @@ public partial class MainWindow : Window
         BtnOpenTxtpPreview.Content = L("btn_open_txtp_preview");
         BtnExportCsv.Content = L("btn_export_csv");
         BtnExportWavAll.Content = L("btn_export_wav_all");
+        BtnImportLabels.Content = L("btn_import_labels");
         BtnSetVgmstream.Content = L("btn_set_vgmstream");
         BtnExportById.Content = L("btn_export_by_id");
         EventIdsLabel.Text = L("lbl_event_ids");
@@ -205,6 +232,7 @@ public partial class MainWindow : Window
         _exportCsvItem.Header = L("menu_export_csv");
         _exportWavItem.Header = L("menu_export_wav");
         _exportTxtpItem.Header = L("menu_export_txtp");
+        _importLabelsItem.Header = L("menu_import_labels");
         _vgmstreamItem.Header = L("menu_vgmstream");
         _exitItem.Header = L("menu_exit");
         _helpMenuItem.Header = L("menu_help");
@@ -212,9 +240,11 @@ public partial class MainWindow : Window
         _langZhItem.Header = L("menu_lang_zh");
         _langEnItem.Header = L("menu_lang_en");
         _aboutItem.Header = L("menu_about");
+        _openLogDirItem.Header = L("menu_open_log_dir");
+        _envDiagItem.Header = L("menu_env_diag");
 
         PlayButton.Content = L("btn_play");
-        PlayOwnerTxtpButton.Content = L("btn_play_owner_txtp");
+        PlayEntryButton.Content = L("btn_play_entry_audio");
         StopButton.Content = L("btn_stop");
         AutoPlayCheck.Content = L("chk_autoplay");
         LabelHint.Text = L("lbl_label");
@@ -240,6 +270,7 @@ public partial class MainWindow : Window
 
         SetStatus(L("status_idle"));
         UpdateProgress();
+        UpdatePlayingSourceText();
 
         if (!string.IsNullOrEmpty(_loadedCsvPath))
             Title = Locale.S("title", Path.GetFileName(_loadedCsvPath), _entries.Count);
@@ -284,6 +315,9 @@ public partial class MainWindow : Window
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
         VgmLog("=== MainWindow loaded ===");
+        // 先把「这台机器/这个会话到底什么环境」记下来，
+        // 「外部程序打不开」这类问题只有这些事实能定性。
+        LogEnvironmentReport();
 
         // 关键：首启对话框必须等窗口真正渲染并前置之后再弹。
         // 否则从最大化终端启动时，这条模态链（欢迎框 → 选择 vgmstream 的文件对话框）
@@ -369,8 +403,9 @@ public partial class MainWindow : Window
             case Key.Space:
                 if (LabelTextBox.IsKeyboardFocusWithin) break;
                 e.Handled = true;
-                if (_vgmstreamProcess != null && !_vgmstreamProcess.HasExited) StopPlayback();
-                else PlayCurrent();
+                // 正在播/正在解码 → 停；否则继续播放器里那段音频（播放器为空才去解码本条 WEM）
+                if (IsPlayingOrDecoding()) StopPlayback();
+                else PlayTransport();
                 break;
         }
     }
@@ -751,6 +786,15 @@ public partial class MainWindow : Window
         });
     }
 
+    /// <summary>把当前 txtp 的名字显示成播放器里的来源名。</summary>
+    private string TxtpSourceName()
+    {
+        if (!string.IsNullOrEmpty(_txtpBaseName)) return _txtpBaseName!;
+        return string.IsNullOrEmpty(_resolvedTxtpPath)
+            ? "txtp"
+            : Path.GetFileNameWithoutExtension(_resolvedTxtpPath);
+    }
+
     private void PlayTxtpResolved()
     {
         if (_currentIndex < 0 || _currentIndex >= _entries.Count) return;
@@ -760,6 +804,7 @@ public partial class MainWindow : Window
         StopPlayback();
         try
         {
+            _audioDecoding = true;
             var tempDir = Path.Combine(Path.GetTempPath(), "WemLabeler");
             Directory.CreateDirectory(tempDir);
             StatusProgress.Visibility = Visibility.Visible;
@@ -792,7 +837,7 @@ public partial class MainWindow : Window
                                 if (gen != _txtpDecodeGen) return;
                                 _previewWavBytes = raw;
                                 SetStatus(Locale.S("status_txtp_silent_fallback"));
-                                LoadAndPlay(raw);
+                                LoadAndPlay(raw, true, TxtpSourceName());
                             });
                             return;
                         }
@@ -804,7 +849,7 @@ public partial class MainWindow : Window
                         {
                             _previewWavBytes = finalBytes;
                             VgmLog("txtp decode success, playing");
-                            LoadAndPlay(finalBytes);
+                            LoadAndPlay(finalBytes, true, TxtpSourceName());
                         }
                         else
                         {
@@ -1213,7 +1258,7 @@ public partial class MainWindow : Window
         NextButton.IsEnabled = false;
         ExportWavCoordButton.IsEnabled = false;
         ExportTracksButton.IsEnabled = false;
-        PlayOwnerTxtpButton.IsEnabled = false;
+        PlayEntryButton.IsEnabled = false;
         SaveButton.Content = Locale.S("btn_save");
         ClearWaveform();
     }
@@ -1227,6 +1272,26 @@ public partial class MainWindow : Window
         _peakData = [];
         _totalSamples = 0;
         _samplePosition = 0;
+        _pcmIsTxtpPreview = false;
+        _pcmSourceName = null;
+        UpdatePlayingSourceText();
+    }
+
+    /// <summary>刷新「播放器里装的是什么」那一行文字。</summary>
+    private void UpdatePlayingSourceText()
+    {
+        if (PlayingSourceText == null) return;
+
+        if (_pcmData == null || _pcmFormat == null || _totalSamples == 0)
+        {
+            PlayingSourceText.Text = Locale.S("lbl_player_empty");
+            return;
+        }
+
+        var name = _pcmSourceName ?? "—";
+        PlayingSourceText.Text = _pcmIsTxtpPreview
+            ? Locale.S("lbl_player_txtp", name)
+            : Locale.S("lbl_player_wem", name);
     }
 
     private static Dictionary<string, int> ParseHeader(string header)
@@ -1268,7 +1333,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void FileListView_MouseDoubleClick(object sender, MouseButtonEventArgs e) => PlayCurrent();
+    private void FileListView_MouseDoubleClick(object sender, MouseButtonEventArgs e) => PlayEntryAudio();
 
     private void FileListView_ColumnHeaderClick(object sender, RoutedEventArgs e)
     {
@@ -1352,13 +1417,13 @@ public partial class MainWindow : Window
         SaveButton.IsEnabled = true;
         SaveButton.Content = Locale.S("btn_save");
         PlayButton.IsEnabled = true;
-        PlayOwnerTxtpButton.IsEnabled = true;
+        PlayEntryButton.IsEnabled = true;
         PrevButton.IsEnabled = index > 0;
         NextButton.IsEnabled = index < _entries.Count - 1;
         ExportWavCoordButton.IsEnabled = _entries.Any(e => e.HasLabel);
         _suppressLabelEvents = false;
 
-        if (AutoPlayCheck.IsChecked == true) PlayCurrent();
+        if (AutoPlayCheck.IsChecked == true) PlayEntryAudio();
         SetStatus(Locale.S("status_current", entry.Filename, entry.WemID, index + 1, _entries.Count));
     }
 
@@ -1385,23 +1450,44 @@ public partial class MainWindow : Window
 
     #region Playback
 
-    private void PlayButton_Click(object sender, RoutedEventArgs e) => PlayCurrent();
+    private void PlayButton_Click(object sender, RoutedEventArgs e) => PlayTransport();
     private void StopButton_Click(object sender, RoutedEventArgs e) => StopPlayback();
+    private void PlayEntryButton_Click(object sender, RoutedEventArgs e) => PlayEntryAudio();
 
-    private async void PlayCurrent()
+    /// <summary>
+    /// 播放器上的「播放/继续」：只操作**播放器里已经装好的那段音频**
+    /// （不管是本条 WEM 还是某个 txtp），不会自己换成别的源。
+    /// 播放器是空的才去解码当前这条 WEM。
+    /// </summary>
+    private void PlayTransport()
     {
         if (_currentIndex < 0 || _currentIndex >= _entries.Count) return;
 
         if (_pcmData != null && _pcmFormat != null && _totalSamples > 0)
         {
             StopWavePlayer();
+            // 已经放到末尾了就从头来，别让用户点了没反应
+            if (_samplePosition >= _totalSamples) _samplePosition = 0;
             VgmLog($"resuming from sample {_samplePosition}");
             PlayFromMemory(_samplePosition);
             StartPlaybackTimer();
             StatusProgress.Visibility = Visibility.Collapsed;
+            PlayButton.IsEnabled = true;
+            StopButton.IsEnabled = true;
             SetStatus(Locale.S("status_playing"));
             return;
         }
+
+        PlayEntryAudio();
+    }
+
+    /// <summary>
+    /// 把「当前这一条 WEM 音频」装进播放器播放。
+    /// 双击列表 / 自动播放 / 「播放本条 WEM 音频」按钮 / 播放器为空时的「播放」都走这里。
+    /// </summary>
+    private async void PlayEntryAudio()
+    {
+        if (_currentIndex < 0 || _currentIndex >= _entries.Count) return;
 
         StopPlayback();
         var entry = _entries[_currentIndex];
@@ -1412,8 +1498,9 @@ public partial class MainWindow : Window
             SetStatus(Locale.S("status_file_not_found_short", wemPath));
             return;
         }
+        _audioDecoding = true;
         var vgmPath = await EnsureVgmstreamAsync();
-        if (vgmPath == null) return;
+        if (vgmPath == null) { _audioDecoding = false; return; }
         try
         {
             var tempDir = Path.Combine(Path.GetTempPath(), "WemLabeler");
@@ -1474,7 +1561,7 @@ public partial class MainWindow : Window
                         if (exitCode == 0 && finalBytes.Length > 44)
                         {
                             VgmLog("decode success, computing peaks");
-                            LoadAndPlay(finalBytes);
+                            LoadAndPlay(finalBytes, false, entry.Filename);
                         }
                         else
                         {
@@ -1498,17 +1585,25 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            VgmLog($"[exception] PlayCurrent: {ex}");
+            VgmLog($"[exception] PlayEntryAudio: {ex}");
             SetStatus(Locale.S("status_play_exception", ex.Message));
             CleanupPlayback(false);
         }
     }
 
-    private void LoadAndPlay(byte[] wavBytes)
+    /// <summary>
+    /// 解码结果装进内存并开始播放，同时记住「播放器里现在装的是哪段音频」。
+    /// <paramref name="fromTxtpPreview"/> = true 表示这是「所属 txtp」的预览音频。
+    /// </summary>
+    private void LoadAndPlay(byte[] wavBytes, bool fromTxtpPreview, string sourceName)
     {
         try
         {
             ClearWaveform();
+            _pcmIsTxtpPreview = fromTxtpPreview;
+            _pcmSourceName = sourceName;
+            if (!fromTxtpPreview) _previewWavBytes = null;
+            UpdatePlayingSourceText();
             using var ms = new MemoryStream(wavBytes);
             using var reader = new WaveFileReader(ms);
             var srcFmt = reader.WaveFormat;
@@ -1553,6 +1648,11 @@ public partial class MainWindow : Window
             PlayFromMemory(0);
             StartPlaybackTimer();
             StatusProgress.Visibility = Visibility.Collapsed;
+            // 播放开始后必须把「播放」按钮放回可用状态：
+            // 解码期间它有可能是灰的，而 txtp 预览播放时也会被禁用，
+            // 结果就是「播放了 txtp 之后点左边的播放没反应」。
+            PlayButton.IsEnabled = _currentIndex >= 0;
+            StopButton.IsEnabled = true;
             SetStatus(Locale.S("status_playing"));
         }
         catch (Exception ex)
@@ -1823,6 +1923,12 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>现在是不是「正在出声」或者「正在解码」——空格键据此决定停还是播。</summary>
+    private bool IsPlayingOrDecoding() =>
+        _audioDecoding ||
+        _wavePlayer is { PlaybackState: PlaybackState.Playing } ||
+        (_vgmstreamProcess != null && !_vgmstreamProcess.HasExited);
+
     private void WaveformCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (_peakData.Length > 0) DrawWaveform();
@@ -1850,6 +1956,7 @@ public partial class MainWindow : Window
 
     private void CleanupPlayback(bool restoreUi)
     {
+        _audioDecoding = false;
         if (restoreUi)
         {
             PlayButton.IsEnabled = _currentIndex >= 0;
@@ -2012,6 +2119,187 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
+
+    #region 从导出的音频文件导入标注
+
+    /// <summary>
+    /// 导出的音频文件名形如 <c>688_6985_4208402129_查理登场的过场动画_.wav</c>：
+    /// 前两段是对象坐标，第三段是 WemID，后面剩下的是标注文本。
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex ExportedWavNameWithCoord =
+        new(@"^(?<c1>\d+)_(?<c2>\d+)_(?<id>\d+)_(?<label>.*)$",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// 退路：只有 <c>WemID_标注</c> 的文件名。
+    /// 标注必须以非数字开头，免得把 <c>688_6985</c> 这种坐标当成 WemID。
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex ExportedWavNameIdOnly =
+        new(@"^(?<id>\d+)_(?<label>\D.*)$",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>解析导出音频的文件名；名字不符合约定或标注为空时返回 false（调用方直接忽略）。</summary>
+    private static bool TryParseExportedWavName(string fileNameWithoutExtension,
+        out string? wemId, out string? coord, out string? label)
+    {
+        wemId = null;
+        coord = null;
+        label = null;
+
+        var m = ExportedWavNameWithCoord.Match(fileNameWithoutExtension);
+        if (m.Success)
+        {
+            wemId = m.Groups["id"].Value;
+            coord = $"{m.Groups["c1"].Value}:{m.Groups["c2"].Value}";
+            label = CleanImportedLabel(m.Groups["label"].Value);
+            return label.Length > 0;
+        }
+
+        m = ExportedWavNameIdOnly.Match(fileNameWithoutExtension);
+        if (m.Success)
+        {
+            wemId = m.Groups["id"].Value;
+            label = CleanImportedLabel(m.Groups["label"].Value);
+            return label.Length > 0;
+        }
+
+        return false;
+    }
+
+    /// <summary>导出时标注末尾常留一个分隔用的下划线，这里连同首尾空白一起去掉。</summary>
+    private static string CleanImportedLabel(string raw) => raw.Trim().Trim('_').Trim();
+
+    private void BtnImportLabels_Click(object sender, RoutedEventArgs e) => ImportLabelsFromFolder();
+
+    /// <summary>
+    /// 打开一个文件夹，按导出的音频文件名（坐标_WemID_标注.wav）匹配回 CSV 行并写入标注。
+    /// 名字对不上的文件直接忽略，不弹错。
+    /// </summary>
+    private void ImportLabelsFromFolder()
+    {
+        if (_entries.Count == 0)
+        {
+            MessageBox.Show(this, Locale.S("dlg_no_data"), Locale.S("dlg_no_data_title"),
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var initDir = !string.IsNullOrEmpty(_loadedCsvPath)
+            ? Path.GetDirectoryName(_loadedCsvPath)
+            : EnsurePaths().OutputDir;
+        var folder = PickFolder(Locale.S("dlg_import_labels_choose"), initDir);
+        if (folder == null) return;
+
+        // 匹配表在 UI 线程上先算好，后台线程只做「读文件名 → 查表」的纯 IO
+        var byWemId = new Dictionary<string, int>(StringComparer.Ordinal);
+        var byCoord = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < _entries.Count; i++)
+        {
+            var entry = _entries[i];
+            if (!string.IsNullOrEmpty(entry.WemID) && !byWemId.ContainsKey(entry.WemID)) byWemId[entry.WemID] = i;
+            if (!string.IsNullOrEmpty(entry.Coord) && !byCoord.ContainsKey(entry.Coord)) byCoord[entry.Coord] = i;
+        }
+
+        SetBusy(true);
+        SetStatus(Locale.S("status_import_labels_scanning", folder));
+
+        _ = Task.Run(() =>
+        {
+            var matches = new List<(int Index, string Label)>();
+            int scanned = 0, ignored = 0;
+            string? error = null;
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(folder, "*.wav", SearchOption.AllDirectories))
+                {
+                    scanned++;
+                    if (!TryParseExportedWavName(Path.GetFileNameWithoutExtension(file),
+                            out var wemId, out var coord, out var label))
+                    {
+                        ignored++;
+                        continue;
+                    }
+
+                    var index = -1;
+                    if (wemId != null && byWemId.TryGetValue(wemId, out var idIdx)) index = idIdx;
+                    else if (coord != null && byCoord.TryGetValue(coord, out var coordIdx)) index = coordIdx;
+
+                    if (index < 0)
+                    {
+                        ignored++;
+                        continue;
+                    }
+                    matches.Add((index, label!));
+                }
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                VgmLog($"[import labels] 扫描失败: {ex}");
+            }
+
+            Dispatcher.Invoke(() => ApplyImportedLabels(folder, matches, scanned, ignored, error));
+        });
+    }
+
+    private void ApplyImportedLabels(string folder, List<(int Index, string Label)> matches,
+        int scanned, int ignored, string? error)
+    {
+        SetBusy(false);
+
+        if (error != null)
+        {
+            SetStatus(Locale.S("status_import_labels_failed", error));
+            MessageBox.Show(this, Locale.S("dlg_import_labels_failed", error), Locale.S("dlg_error_title"),
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        int updated = 0, same = 0, overwritten = 0;
+        foreach (var (index, label) in matches)
+        {
+            if (index < 0 || index >= _entries.Count) continue;
+            var entry = _entries[index];
+            if (string.Equals(entry.Label, label, StringComparison.Ordinal)) { same++; continue; }
+            if (entry.HasLabel) overwritten++;
+            entry.Label = label;
+            updated++;
+        }
+
+        if (updated > 0)
+        {
+            UpdateProgress();
+            RefreshCurrentLabelUi();
+            if (!string.IsNullOrEmpty(_loadedCsvPath))
+            {
+                try { WriteCsvFile(_loadedCsvPath); }
+                catch (Exception ex) { VgmLog($"[import labels] 写回 CSV 失败: {ex.Message}"); }
+            }
+        }
+
+        SetStatus(Locale.S("status_import_labels_done", updated, ignored));
+        MessageBox.Show(this,
+            Locale.S("dlg_import_labels_ok", folder, scanned, updated, same, ignored, overwritten),
+            Locale.S("dlg_import_labels_title"), MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    /// <summary>导入后把当前选中行的标注框同步成导入结果。</summary>
+    private void RefreshCurrentLabelUi()
+    {
+        if (_currentIndex < 0 || _currentIndex >= _entries.Count) return;
+        _suppressLabelEvents = true;
+        try
+        {
+            LabelTextBox.Text = _entries[_currentIndex].Label ?? "";
+            SaveButton.Content = Locale.S("btn_save");
+        }
+        finally
+        {
+            _suppressLabelEvents = false;
+        }
+    }
+
+    #endregion
 
     private async void ExportWav()
     {
@@ -2384,9 +2672,30 @@ public partial class MainWindow : Window
             NextButton.IsEnabled = false;
             ExportWavCoordButton.IsEnabled = false;
             ExportTracksButton.IsEnabled = false;
-            PlayOwnerTxtpButton.IsEnabled = false;
+            PlayEntryButton.IsEnabled = false;
         }
-        else { Cursor = null; FileListView.IsEnabled = true; PlayOwnerTxtpButton.IsEnabled = _currentIndex >= 0; }
+        else
+        {
+            Cursor = null;
+            FileListView.IsEnabled = true;
+            RestoreDetailControls();
+        }
+    }
+
+    /// <summary>
+    /// 忙完一轮（SetBusy(false)）后按当前选中行恢复右侧控件的可用状态。
+    /// 以前只恢复 FileListView，导致导出/导入标注等流程结束后标注框一直灰着。
+    /// </summary>
+    private void RestoreDetailControls()
+    {
+        var hasSelection = _currentIndex >= 0 && _currentIndex < _entries.Count;
+        LabelTextBox.IsEnabled = hasSelection;
+        SaveButton.IsEnabled = hasSelection;
+        PlayButton.IsEnabled = hasSelection;
+        PlayEntryButton.IsEnabled = hasSelection;
+        PrevButton.IsEnabled = hasSelection && _currentIndex > 0;
+        NextButton.IsEnabled = hasSelection && _currentIndex < _entries.Count - 1;
+        ExportWavCoordButton.IsEnabled = _entries.Any(e => e.HasLabel);
     }
 
     /// <summary>

@@ -223,6 +223,8 @@
                                     Margin="0,0,6,4" Click="BtnExportCsv_Click"/>
                             <Button x:Name="BtnExportWavAll" MinWidth="140" Height="30"
                                     Margin="0,0,6,4" Click="BtnExportWavAll_Click"/>
+                            <Button x:Name="BtnImportLabels" MinWidth="130" Height="30"
+                                    Margin="0,0,6,4" Click="BtnImportLabels_Click"/>
                             <Button x:Name="BtnSetVgmstream" MinWidth="150" Height="30"
                                     Margin="0,0,6,4" Click="BtnSetVgmstream_Click"/>
                         </WrapPanel>
@@ -303,6 +305,11 @@
                                     <TextBlock x:Name="InfoChannel" Margin="0,2,0,0"/>
                                     <TextBlock x:Name="InfoPath" TextTrimming="CharacterEllipsis"
                                                Foreground="Gray" FontSize="11" Margin="0,2,0,0"/>
+                                    <!-- 把「本条 WEM 音频」的播放按钮放在上面：
+                                         它只负责把这一条 WEM 装进下面的播放器，
+                                         和 txtp 各自的「播放」是两回事 -->
+                                    <Button x:Name="PlayEntryButton" Height="30" Margin="0,10,0,0"
+                                            IsEnabled="False" Click="PlayEntryButton_Click"/>
                                 </StackPanel>
                             </GroupBox>
 
@@ -312,18 +319,21 @@
                                     <TextBlock x:Name="InfoWemRes" Margin="0,0,0,4"/>
                                     <TextBlock x:Name="InfoBanks" Margin="0,0,0,4" TextWrapping="Wrap"/>
                                     <TextBlock x:Name="InfoTxtp" Margin="0,0,0,4" TextWrapping="Wrap"/>
+                                    <!-- 每个关联的 txtp 一行：文件名 + 「打开」/「播放」两个按钮 -->
+                                    <StackPanel x:Name="TxtpListPanel" Margin="0,0,0,4"/>
                                     <TextBlock x:Name="InfoWwiseID"/>
                                 </StackPanel>
                             </GroupBox>
 
-                            <!-- Playback -->
+                            <!-- Playback：播放器。播放/继续的永远是「已经装进播放器的那段音频」
+                                 （本条 WEM 或某个 txtp），不会自己换源 -->
+                            <TextBlock x:Name="PlayingSourceText" Margin="0,0,0,4"
+                                       TextTrimming="CharacterEllipsis" Foreground="#555"/>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                                 <Button x:Name="PlayButton" Width="70" Height="28"
                                         IsEnabled="False" Click="PlayButton_Click"/>
                                 <Button x:Name="StopButton" Width="70" Height="28" Margin="8,0,0,0"
                                         IsEnabled="False" Click="StopButton_Click"/>
-                                <Button x:Name="PlayOwnerTxtpButton" Width="130" Height="28" Margin="8,0,0,0"
-                                        IsEnabled="False" Click="PlayOwnerTxtpButton_Click"/>
                                 <CheckBox x:Name="AutoPlayCheck"
                                           Margin="16,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>

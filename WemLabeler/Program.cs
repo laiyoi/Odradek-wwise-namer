@@ -180,6 +180,19 @@ static class Program
     #region 临时目录
 
     /// <summary>
+    /// 系统临时目录不可写、已被改到别处。
+    /// 这个改动会被所有子进程继承，所以要记下原值，启动外部程序时还原回去。
+    /// </summary>
+    public static bool TempRedirected { get; private set; }
+
+    /// <summary>重定向之前的系统 TEMP / TMP。</summary>
+    public static string? OriginalTemp { get; private set; }
+    public static string? OriginalTmp { get; private set; }
+
+    /// <summary>重定向之前的临时目录**本身**能不能写（子进程能不能用它）。</summary>
+    public static bool OriginalTempWritable { get; private set; }
+
+    /// <summary>
     /// 确认系统临时目录可写；不可写时把 TEMP/TMP 改到程序能写的地方。
     /// 这一步必须在 new Application() 之前完成，否则 WPF 已经把临时目录缓存下来了。
     /// </summary>
@@ -187,6 +200,12 @@ static class Program
     {
         var systemTemp = Path.GetTempPath();
         if (CanWriteTo(Path.Combine(systemTemp, "WPF"))) return;
+
+        TempRedirected = true;
+        OriginalTemp = Environment.GetEnvironmentVariable("TEMP");
+        OriginalTmp = Environment.GetEnvironmentVariable("TMP");
+        // 注意这里测的是「临时目录本身」——决定子进程能不能用它
+        OriginalTempWritable = CanWriteTo(systemTemp);
 
         var candidates = new[]
         {

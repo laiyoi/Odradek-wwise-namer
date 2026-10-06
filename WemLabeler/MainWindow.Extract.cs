@@ -30,6 +30,9 @@ public partial class MainWindow
     /// <summary>vgmstream 自动下载任务（多次请求共用一个）。</summary>
     private Task<string>? _vgmDownloadTask;
 
+    /// <summary>txtp 反向索引是否已经安排过后台构建（避免每次选中都重建）。</summary>
+    private bool _txtpIndexBuildKicked;
+
     #region 路径解析
 
     /// <summary>解析项目根目录与各子目录；结果缓存，直到路径配置变化。</summary>
@@ -106,6 +109,7 @@ public partial class MainWindow
         _paths = null;
         _txtpRepo = null;
         _txtpRepoBaseDir = null;
+        _txtpIndexBuildKicked = false;
     }
 
     /// <summary>取得 txtp 目录的索引对象；目录不存在时返回 null 并把原因写到状态栏。</summary>
@@ -281,6 +285,7 @@ public partial class MainWindow
             InfoWemRes.Text = Locale.S("lbl_wemres", "—");
             InfoBanks.Text = Locale.S("lbl_banks", "—");
             InfoTxtp.Text = Locale.S("lbl_txtp", "—");
+            TxtpListPanel.Children.Clear();
             InfoWwiseID.Text = "";
             return;
         }
@@ -307,13 +312,358 @@ public partial class MainWindow
         }
         InfoBanks.Text = Locale.S("lbl_banks", bankText);
 
-        // 所属 txtp：CSV 的 TxtpFiles 列，多个用 ; 分隔
-        var txtps = entry.TxtpFileList;
-        InfoTxtp.Text = txtps.Count > 0
-            ? Locale.S("lbl_txtp", string.Join("; ", txtps))
-            : Locale.S("lbl_txtp", "—");
+        // 所属 txtp：CSV 的 TxtpFiles 列，其次 txtp 反向索引；每个 txtp 一行、自带「打开 / 播放」
+        RefreshTxtpRows(entry);
 
         InfoWwiseID.Text = string.IsNullOrEmpty(entry.WemSize) ? "" : Locale.S("lbl_wwiseid", entry.SizeDisplay);
+    }
+
+    /// <summary>「来源关联」里关联到该 WEM 的一个 txtp：显示名 + 解析到的完整路径（可能为 null）。</summary>
+    private sealed record TxtpRef(string Name, string? FullPath);
+
+    /// <summary>
+    /// 收集引用了该 WEM 的 txtp：
+    ///   1. CSV 的 TxtpFiles 列（link_unused_wem.py 算好的，优先）；
+    ///   2. txtp 目录的反向索引（TxtpRepository）。
+    /// <paramref name="buildIndexIfNeeded"/> 为 true 时会在索引没建过时就地构建一次（会短暂卡住 UI）。
+    /// </summary>
+    private List<TxtpRef> CollectTxtpRefs(WemEntry entry, bool buildIndexIfNeeded)
+    {
+        var refs = new List<TxtpRef>();
+
+        void AddRef(string name, string? full)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return;
+            if (refs.Any(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase))) return;
+            refs.Add(new TxtpRef(name, full));
+        }
+
+        var repo = TryEnsureTxtpRepositoryQuiet();
+
+        foreach (var name in entry.TxtpFileList)
+            AddRef(name, repo?.ResolveTxtpPath(name));
+
+        if (refs.Count > 0 || repo == null || !long.TryParse(entry.WemID, out var wemId)) return refs;
+
+        if (!repo.HasTxtpIndex && buildIndexIfNeeded)
+        {
+            SetBusy(true);
+            SetStatus(Locale.S("status_txtp_indexing"));
+            try
+            {
+                repo.BuildTxtpIndex(msg => VgmLog(msg), CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                VgmLog($"[txtp-refs] 建立 txtp 索引失败: {ex.Message}");
+            }
+            finally
+            {
+                SetBusy(false);
+            }
+        }
+
+        if (repo.HasTxtpIndex)
+            foreach (var file in repo.FindTxtpFilesForWem(wemId))
+                AddRef(Path.GetFileName(file), file);
+
+        return refs;
+    }
+
+    /// <summary>
+    /// 后台构建一次 txtp 反向索引（CSV 没有 TxtpFiles 列时，
+    /// 「来源关联」才能列出真正引用了该 WEM 的 txtp），建好后刷新当前显示。
+    /// </summary>
+    private void MaybeBuildTxtpIndexInBackground()
+    {
+        if (_txtpIndexBuildKicked) return;
+        var repo = TryEnsureTxtpRepositoryQuiet();
+        if (repo == null || repo.HasTxtpIndex) return;
+
+        _txtpIndexBuildKicked = true;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                repo.BuildTxtpIndex(msg => VgmLog(msg), CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                VgmLog($"[txtp-refs] 后台建立 txtp 索引失败: {ex.Message}");
+            }
+
+            try
+            {
+                Dispatcher.Invoke(() => { if (_currentIndex >= 0) RefreshSourceInfo(); });
+            }
+            catch (Exception ex)
+            {
+                VgmLog($"[txtp-refs] 刷新来源关联失败: {ex.Message}");
+            }
+        });
+    }
+
+    /// <summary>把当前 WEM 关联的每个 txtp 渲染成一行：文件名 + 「打开（默认文本编辑器）」+「播放」。</summary>
+    private void RefreshTxtpRows(WemEntry entry)
+    {
+        TxtpListPanel.Children.Clear();
+
+        var refs = CollectTxtpRefs(entry, buildIndexIfNeeded: false);
+        if (refs.Count == 0)
+        {
+            InfoTxtp.Text = Locale.S("lbl_txtp", "—");
+            MaybeBuildTxtpIndexInBackground();
+            return;
+        }
+
+        InfoTxtp.Text = Locale.S("lbl_txtp_header");
+
+        foreach (var reference in refs)
+        {
+            var row = new System.Windows.Controls.Grid { Margin = new Thickness(0, 0, 0, 3) };
+            row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star)
+            });
+            row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition
+            {
+                Width = GridLength.Auto
+            });
+            row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition
+            {
+                Width = GridLength.Auto
+            });
+
+            var name = new System.Windows.Controls.TextBlock
+            {
+                Text = reference.Name,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(0, 0, 6, 0),
+                ToolTip = reference.FullPath ?? reference.Name
+            };
+            System.Windows.Controls.Grid.SetColumn(name, 0);
+            row.Children.Add(name);
+
+            var found = reference.FullPath != null && File.Exists(reference.FullPath);
+
+            // 注意：按钮**不**在找不到文件时禁用 —— 禁用的按钮点下去毫无反馈，
+            // 看起来就像「点了没反应」。改为始终可点，由处理函数明确告知结果。
+            var openButton = new System.Windows.Controls.Button
+            {
+                Content = Locale.S("btn_open_txtp_editor"),
+                Height = 22,
+                MinWidth = 48,
+                Padding = new Thickness(6, 0, 6, 0),
+                FontSize = 11,
+                ToolTip = found
+                    ? Locale.S("status_open_txtp_hint", reference.FullPath ?? reference.Name)
+                    : Locale.S("status_txtp_missing_file", reference.Name)
+            };
+            // 左键 = 系统默认程序打开；不行退回记事本，再不行弹应用内查看器
+            openButton.Click += (_, _) => OpenTxtpInEditor(reference.Name, reference.FullPath);
+            System.Windows.Controls.Grid.SetColumn(openButton, 1);
+            row.Children.Add(openButton);
+
+            var playButton = new System.Windows.Controls.Button
+            {
+                Content = Locale.S("btn_play_txtp"),
+                Height = 22,
+                MinWidth = 48,
+                Margin = new Thickness(4, 0, 0, 0),
+                Padding = new Thickness(6, 0, 6, 0),
+                FontSize = 11,
+                IsEnabled = found,
+                ToolTip = found ? Locale.S("status_play_txtp_hint", reference.Name) : null
+            };
+            playButton.Click += (_, _) => PlayTxtpFile(reference.FullPath!);
+            System.Windows.Controls.Grid.SetColumn(playButton, 2);
+            row.Children.Add(playButton);
+
+            TxtpListPanel.Children.Add(row);
+        }
+    }
+
+    /// <summary>
+    /// 在应用内打开一个小窗口，直接把 txtp 的内容显示出来。
+    /// 这是「打开」按钮的左键行为 —— 不依赖系统关联，也不依赖外部程序能不能弹出窗口，
+    /// 所以一定能看到内容。想用外部编辑器请用右键菜单。
+    /// </summary>
+    private void ShowTxtpViewer(string displayName, string? fullPath)
+    {
+        if (string.IsNullOrEmpty(fullPath) || !File.Exists(fullPath))
+        {
+            var message = Locale.S("dlg_txtp_missing_file", displayName, fullPath ?? "—");
+            SetStatus(Locale.S("status_txtp_missing_file", displayName));
+            MessageBox.Show(this, message, Locale.S("dlg_error_title"),
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var pathText = new System.Windows.Controls.TextBlock
+        {
+            Text = fullPath,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Foreground = System.Windows.Media.Brushes.Gray,
+            FontSize = 11,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+
+        var contentBox = new System.Windows.Controls.TextBox
+        {
+            IsReadOnly = true,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.NoWrap,
+            FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+            FontSize = 12,
+            Padding = new Thickness(6),
+            VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto
+        };
+
+        var reloadButton = new System.Windows.Controls.Button
+        {
+            Content = Locale.S("btn_reload"), Width = 90, Height = 26, Margin = new Thickness(0, 8, 8, 0)
+        };
+        var externalButton = new System.Windows.Controls.Button
+        {
+            Content = Locale.S("btn_open_external"), Width = 150, Height = 26, Margin = new Thickness(0, 8, 8, 0)
+        };
+        var closeButton = new System.Windows.Controls.Button
+        {
+            Content = Locale.S("btn_close"), Width = 90, Height = 26, Margin = new Thickness(0, 8, 0, 0)
+        };
+        externalButton.Click += (_, _) => OpenTxtpInEditor(displayName, fullPath);
+
+        var buttons = new System.Windows.Controls.StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        buttons.Children.Add(reloadButton);
+        buttons.Children.Add(externalButton);
+        buttons.Children.Add(closeButton);
+
+        var grid = new System.Windows.Controls.Grid { Margin = new Thickness(10) };
+        grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = GridLength.Auto });
+        System.Windows.Controls.Grid.SetRow(pathText, 0);
+        System.Windows.Controls.Grid.SetRow(contentBox, 1);
+        System.Windows.Controls.Grid.SetRow(buttons, 2);
+        grid.Children.Add(pathText);
+        grid.Children.Add(contentBox);
+        grid.Children.Add(buttons);
+
+        var window = new Window
+        {
+            Title = Locale.S("txtp_viewer_title", displayName),
+            Owner = this,
+            Width = 760,
+            Height = 580,
+            MinWidth = 420,
+            MinHeight = 260,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = grid
+        };
+
+        void LoadContent()
+        {
+            try
+            {
+                const long maxBytes = 8L * 1024 * 1024;
+                var info = new FileInfo(fullPath);
+                if (info.Length > maxBytes)
+                {
+                    using var stream = File.OpenRead(fullPath);
+                    var buffer = new byte[maxBytes];
+                    var read = stream.Read(buffer, 0, buffer.Length);
+                    contentBox.Text = Encoding.UTF8.GetString(buffer, 0, read) + Locale.S("txtp_viewer_truncated");
+                }
+                else
+                {
+                    contentBox.Text = File.ReadAllText(fullPath);
+                }
+                contentBox.CaretIndex = 0;
+                contentBox.ScrollToHome();
+            }
+            catch (Exception ex)
+            {
+                contentBox.Text = Locale.S("txtp_viewer_failed", ex.Message);
+                VgmLog($"[txtp viewer] 读取失败: {fullPath} — {ex.Message}");
+            }
+        }
+
+        reloadButton.Click += (_, _) => LoadContent();
+        closeButton.Click += (_, _) => window.Close();
+
+        LoadContent();
+        VgmLog($"[open txtp] 应用内查看: {fullPath}");
+        SetStatus(Locale.S("status_txtp_viewing", displayName));
+        window.Show();
+    }
+
+    /// <summary>
+    /// 「打开」txtp：
+    ///   ① 交给系统默认程序 —— 最标准的写法，就这一句；
+    ///   ② 抛异常就退回记事本；
+    ///   ③ 再不行弹出应用内查看器 —— 总之一定给你看到内容。
+    /// </summary>
+    private void OpenTxtpInEditor(string displayName, string? fullPath)
+    {
+        if (string.IsNullOrEmpty(fullPath) || !File.Exists(fullPath))
+        {
+            ShowTxtpViewer(displayName, fullPath);
+            return;
+        }
+
+        // ① 系统默认程序
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = fullPath, UseShellExecute = true });
+            VgmLog($"[open txtp] 用系统默认程序打开: {fullPath}");
+            SetStatus(Locale.S("status_txtp_opened", displayName, Locale.S("opener_system_default")));
+            return;
+        }
+        catch (Exception ex)
+        {
+            VgmLog($"[open txtp] 系统默认程序打开失败: {ex.GetType().Name}: {ex.Message}");
+        }
+
+        // ② 记事本
+        try
+        {
+            var notepad = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe");
+            if (!File.Exists(notepad)) notepad = "notepad.exe";
+
+            var psi = new ProcessStartInfo { FileName = notepad, UseShellExecute = false };
+            psi.ArgumentList.Add(fullPath);
+            Process.Start(psi);
+
+            VgmLog($"[open txtp] 用记事本打开: {fullPath}");
+            SetStatus(Locale.S("status_txtp_opened", displayName, "notepad"));
+            return;
+        }
+        catch (Exception ex)
+        {
+            VgmLog($"[open txtp] 记事本打开失败: {ex.GetType().Name}: {ex.Message}");
+        }
+
+        // ③ 兜底：应用内查看器
+        ShowTxtpViewer(displayName, fullPath);
+    }
+
+
+    /// <summary>播放指定的 txtp 文件（解析其中的 wem 路径后交给 vgmstream 解码播放）。</summary>
+    private void PlayTxtpFile(string path)
+    {
+        if (!File.Exists(path))
+        {
+            SetStatus(Locale.S("status_txtp_missing_file", Path.GetFileName(path)));
+            return;
+        }
+        OpenTxtpFile(path);
     }
 
     #endregion
@@ -975,76 +1325,37 @@ public partial class MainWindow
 
     #region 播放该 WEM 所属的 txtp
 
-    private void PlayOwnerTxtpButton_Click(object sender, RoutedEventArgs e) => PlayOwningTxtp();
-
     /// <summary>
-    /// 找出引用了当前选中 WEM 的 txtp 并直接作为音频播放，
-    /// 无需手动把 txtp 拖进窗口（拖入与「打开txtp预览」仍然可用）。
+    /// 找出引用了当前选中 WEM 的 txtp 并直接作为音频播放（Ctrl+T）。
+    /// 平时也可以直接在「来源关联」里点某个 txtp 旁边的「播放」。
     /// </summary>
     private void PlayOwningTxtp()
     {
         if (_currentIndex < 0 || _currentIndex >= _entries.Count) return;
 
         var entry = _entries[_currentIndex];
-        if (!long.TryParse(entry.WemID, out var wemId))
+        var refs = CollectTxtpRefs(entry, buildIndexIfNeeded: true)
+            .Where(r => r.FullPath != null && File.Exists(r.FullPath))
+            .ToList();
+
+        if (refs.Count == 0)
         {
-            SetStatus(Locale.S("status_owner_txtp_no_id", entry.WemID));
+            if (!long.TryParse(entry.WemID, out _))
+                SetStatus(Locale.S("status_owner_txtp_no_id", entry.WemID));
+            else
+                SetStatus(Locale.S("status_owner_txtp_none", entry.WemID));
             return;
         }
 
-        var paths = EnsurePaths();
-        var repo = EnsureTxtpRepository(paths);
-        if (repo == null) return;
-
-        var candidates = new List<string>();
-
-        // 1) 优先用 CSV 里已经算好的 TxtpFiles 列（来自 link_unused_wem.py）
-        foreach (var name in entry.TxtpFileList)
+        string chosen;
+        if (refs.Count == 1)
         {
-            var full = repo.ResolveTxtpPath(name);
-            if (full != null && !candidates.Contains(full, StringComparer.OrdinalIgnoreCase))
-                candidates.Add(full);
-        }
-
-        // 2) 反向索引：所有引用了该 WemID 的 txtp
-        if (candidates.Count == 0 && repo.HasTxtpIndex)
-            candidates.AddRange(repo.FindTxtpFilesForWem(wemId));
-
-        // 3) 索引还没建过，先建一次（约 1 秒 / 1 万个文件）
-        if (candidates.Count == 0 && !repo.HasTxtpIndex)
-        {
-            SetBusy(true);
-            SetStatus(Locale.S("status_txtp_indexing"));
-            try
-            {
-                repo.BuildTxtpIndex(msg => VgmLog(msg), CancellationToken.None);
-                candidates.AddRange(repo.FindTxtpFilesForWem(wemId));
-            }
-            catch (Exception ex)
-            {
-                VgmLog($"[owner-txtp] 建立 txtp 索引失败: {ex.Message}");
-            }
-            finally
-            {
-                SetBusy(false);
-            }
-        }
-
-        if (candidates.Count == 0)
-        {
-            SetStatus(Locale.S("status_owner_txtp_none", entry.WemID));
-            return;
-        }
-
-        string? chosen;
-        if (candidates.Count == 1)
-        {
-            chosen = candidates[0];
+            chosen = refs[0].FullPath!;
         }
         else
         {
-            var choices = candidates
-                .Select(p => new TxtpChoice(p, Path.GetFileName(p)))
+            var choices = refs
+                .Select(r => new TxtpChoice(r.FullPath!, r.Name))
                 .ToList();
             var picker = new TxtpPickerWindow(
                 Locale.S("dlg_txtp_pick_hint", entry.WemID, choices.Count), choices) { Owner = this };
@@ -1052,8 +1363,8 @@ public partial class MainWindow
             chosen = picker.SelectedChoice.Path;
         }
 
-        SetStatus(Locale.S("status_owner_txtp_found", Path.GetFileName(chosen), candidates.Count));
-        VgmLog($"[owner-txtp] wem={entry.WemID} -> {chosen} (候选 {candidates.Count} 个)");
+        SetStatus(Locale.S("status_owner_txtp_found", Path.GetFileName(chosen), refs.Count));
+        VgmLog($"[owner-txtp] wem={entry.WemID} -> {chosen} (候选 {refs.Count} 个)");
         OpenTxtpFile(chosen);
     }
 

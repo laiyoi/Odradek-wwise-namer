@@ -25,6 +25,12 @@ public class AppConfig
     /// <summary>按 ID 导出（export_by_id.py）的输出目录。</summary>
     public string? ExportByIdDir { get; set; }
 
+    /// <summary>
+    /// 用「打开」按钮打开 txtp 时使用的文本编辑器可执行文件（如 VSCode / Notepad++）。
+    /// 留空 = 系统给 .txtp 注册过打开方式就用它，否则用记事本。
+    /// </summary>
+    public string? TextEditorPath { get; set; }
+
     // --- 直接读游戏文件导出 ---
 
     /// <summary>DS2 游戏根目录（含 DS2.exe 的那一层），为空时自动探测。</summary>
